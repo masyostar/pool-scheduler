@@ -270,6 +270,8 @@
     identity: null,
     workers: [],
     shifts: [],
+    availabilityRequests: [],
+    availability: [],
     tab: 'schedule',
     weekStart: startOfWeek(new Date()),
     modal: null,
@@ -323,13 +325,17 @@
 
   async function loadAll(){
     const identity = JSON.parse(localStorage.getItem('pool_identity') || 'null');
-    const [workers, shifts] = await Promise.all([
+    const [workers, shifts, availRequests, availability] = await Promise.all([
       api('GET','/api/workers'),
-      api('GET','/api/shifts')
+      api('GET','/api/shifts'),
+      api('GET','/api/availability-requests'),
+      api('GET','/api/availability')
     ]);
     state.identity = identity;
     state.workers = workers || [];
     state.shifts = shifts || [];
+    state.availabilityRequests = availRequests || [];
+    state.availability = availability || [];
     state.loading = false;
     render();
   }
@@ -435,12 +441,21 @@
 
     html += '<div class="tabs">' +
       '<button class="tab '+(state.tab==='schedule'?'active':'')+'" data-tab="schedule">Schedule</button>' +
-      '<button class="tab '+(state.tab==='board'?'active':'')+'" data-tab="board">Open &amp; Trade</button>';
+      '<button class="tab '+(state.tab==='board'?'active':'')+'" data-tab="board">Open &amp; Trade</button>' +
+      '<button class="tab '+(state.tab==='availability'?'active':'')+'" data-tab="availability">Availability</button>';
     if(isOperator()) html += '<button class="tab '+(state.tab==='roster'?'active':'')+'" data-tab="roster">Roster</button>';
     html += '</div><div class="content">';
 
+    if(!isOperator() && hasPendingRequest()){
+      var req = getPendingRequest();
+      html += '<div style="background:var(--amber); color:var(--deep); padding:10px 14px; border-radius:8px; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">' +
+        '<span style="font-weight:600; font-size:13px;">Availability needed for '+fmtRange(new Date(req.fromDate+'T00:00:00'))+'</span>' +
+        '<button class="primary-btn" id="fill-availability" style="background:var(--deep);">Fill out availability</button></div>';
+    }
+
     if(state.tab === 'schedule') html += scheduleHTML();
     else if(state.tab === 'board') html += boardHTML();
+    else if(state.tab === 'availability') html += availabilityHTML();
     else if(state.tab === 'roster') html += rosterHTML();
     html += '</div>';
     return html;
@@ -466,6 +481,11 @@
         '<div class="dnum">'+d.getDate()+'</div></div>';
       if(dayShifts.length===0) html += '<div class="empty">No shifts</div>';
       dayShifts.forEach(function(s){ html += shiftCardHTML(s); });
+      if(isOperator() && state.availabilityRequests.length > 0){
+        var availCount = 0;
+        state.workers.forEach(function(w){ if(workerAvailForDate(w.id, iso) && workerAvailForDate(w.id, iso).available) availCount++; });
+        if(availCount > 0) html += '<div style="font-size:10px; color:var(--green); font-weight:600; margin-top:4px;">'+availCount+' available</div>';
+      }
       if(isOperator()) html += '<button class="addcell" data-add-day="'+iso+'">+ Add shift</button>';
       html += '</div>';
     });
@@ -539,6 +559,114 @@
     return html;
   }
 
+  function hasPendingRequest(){
+    if(isOperator()) return false;
+    return state.availabilityRequests.some(function(r){ return true; });
+  }
+  function getPendingRequest(){
+    return state.availabilityRequests[state.availabilityRequests.length - 1];
+  }
+  function myAvailForDate(date){
+    return state.availability.find(function(a){ return a.workerId===state.identity.id && a.date===date; });
+  }
+  function workerAvailForDate(workerId, date){
+    return state.availability.find(function(a){ return a.workerId===workerId && a.date===date; });
+  }
+
+  function availabilityHTML(){
+    if(isOperator()){
+      var html = '';
+      html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">' +
+        '<h3 style="margin:0; color:var(--deep);">Availability Requests</h3>' +
+        '<button class="primary-btn" id="new-avail-request">+ Request availability</button></div>';
+
+      if(state.availabilityRequests.length === 0){
+        html += '<div class="empty-state"><div class="ring"></div>' +
+          '<h3 style="margin:0 0 6px;">No requests yet</h3>' +
+          '<p style="font-size:13px;">Create a request to ask workers when they\'re available for an upcoming period.</p></div>';
+      } else {
+        state.availabilityRequests.slice().reverse().forEach(function(req){
+          var fromDate = new Date(req.fromDate+'T00:00:00');
+          var toDate = new Date(req.toDate+'T00:00:00');
+          var workersWithAvail = 0;
+          state.workers.forEach(function(w){
+            var hasResponse = state.availability.some(function(a){ return a.workerId===w.id && a.date>=req.fromDate && a.date<=req.toDate; });
+            if(hasResponse) workersWithAvail++;
+          });
+          html += '<div class="board-item"><div class="left">' +
+            '<div class="d1">'+fmtRange(fromDate)+'</div>' +
+            '<div class="d2">'+workersWithAvail+' of '+state.workers.length+' workers responded</div>' +
+            '<div class="d3">Created '+new Date(req.createdAt).toLocaleDateString()+'</div></div>' +
+            '<button class="del-link" data-delete-req="'+req.id+'">Delete</button></div>';
+        });
+
+        html += '<div style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px;">' +
+          '<h3 style="margin:0 0 10px; color:var(--deep); font-size:15px;">Responses</h3>';
+
+        var latestReq = state.availabilityRequests[state.availabilityRequests.length - 1];
+        if(latestReq){
+          html += '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;">' +
+            '<tr><th style="text-align:left; padding:6px 8px; border-bottom:2px solid var(--line); font-size:11px; text-transform:uppercase; color:var(--ink-soft);">Worker</th>';
+          var dates = datesInRange(latestReq.fromDate, latestReq.toDate);
+          dates.forEach(function(d){
+            var dayName = new Date(d+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'});
+            html += '<th style="text-align:center; padding:6px 4px; border-bottom:2px solid var(--line); font-size:11px; text-transform:uppercase; color:var(--ink-soft); min-width:50px;">'+dayName+'</th>';
+          });
+          html += '</tr>';
+          state.workers.forEach(function(w){
+            html += '<tr><td style="padding:6px 8px; border-bottom:1px solid var(--line); font-weight:600;">'+escapeHtml(w.name)+'</td>';
+            dates.forEach(function(d){
+              var av = workerAvailForDate(w.id, d);
+              if(av){
+                if(av.available) html += '<td style="text-align:center; padding:6px 4px; border-bottom:1px solid var(--line); color:var(--green); font-weight:700;">&#10003;</td>';
+                else html += '<td style="text-align:center; padding:6px 4px; border-bottom:1px solid var(--line); color:var(--buoy); font-weight:700;">&#10007;</td>';
+              } else {
+                html += '<td style="text-align:center; padding:6px 4px; border-bottom:1px solid var(--line); color:#ccc;">&mdash;</td>';
+              }
+            });
+            html += '</tr>';
+          });
+          html += '</table></div>';
+        }
+        html += '</div>';
+      }
+      return html;
+    } else {
+      var html = '<h3 style="margin:0 0 14px; color:var(--deep);">My Availability</h3>';
+      if(state.availabilityRequests.length === 0){
+        html += '<div class="empty-state"><div class="ring"></div>' +
+          '<h3 style="margin:0 0 6px;">Nothing requested yet</h3>' +
+          '<p style="font-size:13px;">The operator hasn\'t requested availability yet. Check back soon.</p></div>';
+      } else {
+        var latestReq = state.availabilityRequests[state.availabilityRequests.length - 1];
+        var dates = datesInRange(latestReq.fromDate, latestReq.toDate);
+        html += '<p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Mark each day as available or unavailable for '+fmtRange(new Date(latestReq.fromDate+'T00:00:00'))+'</p>';
+        dates.forEach(function(d){
+          var dt = new Date(d+'T00:00:00');
+          var av = myAvailForDate(d);
+          var status = av ? (av.available ? 'available' : 'unavailable') : '';
+          html += '<div class="roster-row" style="cursor:pointer;" data-avail-toggle="'+d+'">' +
+            '<span class="rname">'+dt.toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+'</span>' +
+            '<span style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; ' +
+            (status==='available' ? 'background:var(--green); color:#fff;' : status==='unavailable' ? 'background:var(--buoy); color:#fff;' : 'background:var(--sand); border:1px solid var(--line); color:var(--ink-soft);') +
+            '">'+(status==='available' ? 'Available' : status==='unavailable' ? 'Unavailable' : 'Not set')+'</span></div>';
+        });
+      }
+      return html;
+    }
+  }
+
+  function datesInRange(from, to){
+    var out = [];
+    var cur = new Date(from+'T00:00:00');
+    var end = new Date(to+'T00:00:00');
+    while(cur <= end){
+      out.push(fmtISO(cur));
+      cur.setDate(cur.getDate()+1);
+    }
+    return out;
+  }
+
   function rosterHTML(){
     var html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">' +
       '<h3 style="margin:0; color:var(--deep);">Roster</h3>' +
@@ -601,6 +729,17 @@
         '<div class="modal-actions"><div></div>' +
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
         '<button class="primary-btn" id="w-save">Add</button></div></div></div>';
+    } else if(m.type === 'availrequest'){
+      var today = todayISO();
+      var nextWeek = fmtISO(new Date(Date.now()+7*86400000));
+      wrap.innerHTML = '<div class="modal">' +
+        '<h3>Request Availability</h3>' +
+        '<p style="font-size:13px; color:var(--ink-soft); margin:0 0 14px;">Workers will be prompted to mark which days they\'re available in this range.</p>' +
+        '<div class="field row2"><div><label>From</label><input type="date" id="ar-from" value="'+m.data.fromDate||today+'"></div>' +
+        '<div><label>To</label><input type="date" id="ar-to" value="'+m.data.toDate||nextWeek+'"></div></div>' +
+        '<div class="modal-actions"><div></div>' +
+        '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
+        '<button class="primary-btn" id="ar-save">Send request</button></div></div></div>';
     }
 
     app.appendChild(wrap);
@@ -649,6 +788,20 @@
         var w = await api('POST','/api/workers',{name:name, role:role});
         state.workers.push(w);
         state.modal = null;
+        render();
+      };
+    }
+    var arsave = document.getElementById('ar-save');
+    if(arsave){
+      arsave.onclick = async function(){
+        var fromDate = document.getElementById('ar-from').value;
+        var toDate = document.getElementById('ar-to').value;
+        if(!fromDate || !toDate){ showToast('Select both dates'); return; }
+        if(fromDate > toDate){ showToast('Start date must be before end date'); return; }
+        var req = await api('POST','/api/availability-requests',{fromDate:fromDate, toDate:toDate});
+        state.availabilityRequests.push(req);
+        state.modal = null;
+        showToast('Availability request sent');
         render();
       };
     }
@@ -729,6 +882,37 @@
     });
     var addWorker = document.getElementById('add-worker');
     if(addWorker) addWorker.onclick = function(){ state.modal = {type:'addworker', data:{}}; render(); };
+    var newAvailReq = document.getElementById('new-avail-request');
+    if(newAvailReq) newAvailReq.onclick = function(){ state.modal = {type:'availrequest', data:{}}; render(); };
+    var fillAvail = document.getElementById('fill-availability');
+    if(fillAvail) fillAvail.onclick = function(){ state.tab = 'availability'; render(); };
+    document.querySelectorAll('[data-delete-req]').forEach(function(el){
+      el.onclick = async function(){
+        if(!confirm('Delete this availability request?')) return;
+        await api('DELETE','/api/availability-requests/'+el.dataset.deleteReq);
+        state.availabilityRequests = state.availabilityRequests.filter(function(r){ return r.id!==el.dataset.deleteReq; });
+        render();
+      };
+    });
+    document.querySelectorAll('[data-avail-toggle]').forEach(function(el){
+      el.onclick = async function(){
+        var date = el.dataset.availToggle;
+        var existing = myAvailForDate(date);
+        if(existing){
+          if(existing.available){
+            await api('PUT','/api/availability/'+existing.id, {available:false});
+            existing.available = false;
+          } else {
+            await api('DELETE','/api/availability/'+existing.id);
+            state.availability = state.availability.filter(function(a){ return a.id!==existing.id; });
+          }
+        } else {
+          var newAv = await api('POST','/api/availability',{workerId:state.identity.id, date:date, available:true});
+          state.availability.push(newAv);
+        }
+        render();
+      };
+    });
     var resetAll = document.getElementById('reset-all');
     if(resetAll) resetAll.onclick = async function(){
       if(!confirm('Are you sure? This will delete ALL workers and shifts permanently.')) return;
@@ -745,9 +929,11 @@
   loadAll();
   setInterval(function(){
     if(state.identity && !state.modal){
-      Promise.all([api('GET','/api/workers'), api('GET','/api/shifts')]).then(function(results){
+      Promise.all([api('GET','/api/workers'), api('GET','/api/shifts'), api('GET','/api/availability-requests'), api('GET','/api/availability')]).then(function(results){
         state.workers = results[0] || [];
         state.shifts = results[1] || [];
+        state.availabilityRequests = results[2] || [];
+        state.availability = results[3] || [];
         render();
       });
     }

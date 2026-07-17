@@ -111,6 +111,69 @@ app.delete('/api/shifts/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ============ AVAILABILITY REQUESTS ============
+
+app.get('/api/availability-requests', (req, res) => {
+  const data = readData();
+  res.json(data.availability_requests || []);
+});
+
+app.post('/api/availability-requests', (req, res) => {
+  const data = readData();
+  if (!data.availability_requests) data.availability_requests = [];
+  const request = { id: uid(), ...req.body, createdAt: new Date().toISOString() };
+  data.availability_requests.push(request);
+  writeData(data);
+  res.json(request);
+});
+
+app.delete('/api/availability-requests/:id', (req, res) => {
+  const data = readData();
+  data.availability_requests = (data.availability_requests || []).filter(r => r.id !== req.params.id);
+  writeData(data);
+  res.json({ ok: true });
+});
+
+// ============ AVAILABILITY RESPONSES ============
+
+app.get('/api/availability', (req, res) => {
+  const data = readData();
+  let avail = data.availability || [];
+  if (req.query.workerId) {
+    avail = avail.filter(a => a.workerId === req.query.workerId);
+  }
+  if (req.query.from && req.query.to) {
+    avail = avail.filter(a => a.date >= req.query.from && a.date <= req.query.to);
+  }
+  res.json(avail);
+});
+
+app.post('/api/availability', (req, res) => {
+  const data = readData();
+  if (!data.availability) data.availability = [];
+  const avail = { id: uid(), ...req.body };
+  data.availability.push(avail);
+  writeData(data);
+  res.json(avail);
+});
+
+app.put('/api/availability/:id', (req, res) => {
+  const data = readData();
+  if (!data.availability) data.availability = [];
+  const idx = data.availability.findIndex(a => a.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  data.availability[idx] = { ...data.availability[idx], ...req.body };
+  writeData(data);
+  res.json(data.availability[idx]);
+});
+
+app.delete('/api/availability/:id', (req, res) => {
+  const data = readData();
+  data.availability = (data.availability || []).filter(a => a.id !== req.params.id);
+  writeData(data);
+  res.json({ ok: true });
+});
+
 // ============ CONFLICTS ============
 
 app.get('/api/conflicts', (req, res) => {
@@ -154,7 +217,7 @@ function timeToMin(t) {
 // ============ RESET ============
 
 app.post('/api/reset', (req, res) => {
-  writeData({ workers: [], shifts: [] });
+  writeData({ workers: [], shifts: [], availability_requests: [], availability: [] });
   res.json({ ok: true });
 });
 
