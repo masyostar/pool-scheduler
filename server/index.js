@@ -49,25 +49,27 @@ function verifyPassword(password, stored) {
 app.post('/api/register', (req, res) => {
   const data = readData();
   const { username, password, name, role } = req.body;
-  if (!username || !password || !name || !role) {
+  if (!username || !password || !name) {
     return res.status(400).json({ error: 'All fields required' });
   }
   if (data.users.find(u => u.username === username)) {
     return res.status(400).json({ error: 'Username already taken' });
   }
+  const isFirst = data.users.length === 0;
+  const finalRole = isFirst ? 'operator' : role;
   const user = {
     id: uid(),
     username,
     password: hashPassword(password),
     name,
-    role
+    role: finalRole
   };
   data.users.push(user);
   // Also create a worker entry
   if (!data.workers) data.workers = [];
-  data.workers.push({ id: user.id, name, role });
+  data.workers.push({ id: user.id, name, role: finalRole });
   writeData(data);
-  res.json({ id: user.id, username: user.username, name: user.name, role: user.role });
+  res.json({ id: user.id, username: user.username, name: user.name, role: finalRole });
 });
 
 app.post('/api/login', (req, res) => {

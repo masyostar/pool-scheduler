@@ -397,6 +397,7 @@
   // ================= AUTH (Login/Register) =================
   function onboardHTML(){
     var mode = state.authMode || 'login';
+    var hasRoster = state.workers && state.workers.length > 0;
     var html = '<div class="onboard-wrap"><div class="onboard-card">';
     if(mode === 'login'){
       html += '<h2>Welcome back</h2>' +
@@ -409,11 +410,13 @@
         '<button class="link-btn" id="show-register" style="color:var(--deep); text-decoration:underline; font-size:13px; font-weight:600; width:100%; text-align:center; display:block;">Create an account</button>';
     } else {
       html += '<h2>Create account</h2>' +
-        '<p>Set up your login for the pool shift board.</p>' +
+        '<p>The first person to register becomes the Pool Operator \u2014 in charge of building and editing the schedule for everyone.</p>' +
         '<div class="field"><label>Full name</label><input id="reg-name" placeholder="e.g. Jamie Rivera"/></div>' +
-        '<div class="field"><label>Position</label><select id="reg-role">' +
-        '<option value="operator">Operator</option><option value="manager">Manager</option><option value="lifeguard">Lifeguard</option><option value="gateperson">Gateperson</option>' +
-        '</select></div>' +
+        (hasRoster
+          ? '<div class="field"><label>Position</label><select id="reg-role">' +
+            '<option value="lifeguard">Lifeguard</option><option value="manager">Manager</option><option value="gateperson">Gateperson</option>' +
+            '</select></div>'
+          : '<input id="reg-role" type="hidden" value="operator"/>') +
         '<div class="field"><label>Username</label><input id="reg-user" placeholder="Choose a username" autocomplete="username"/></div>' +
         '<div class="field"><label>Password</label><input id="reg-pass" type="password" placeholder="Choose a password" autocomplete="new-password"/></div>' +
         '<div id="auth-error" style="color:var(--buoy); font-size:12px; margin-bottom:10px; display:none;"></div>' +
