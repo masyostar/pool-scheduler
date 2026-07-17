@@ -64,7 +64,7 @@
     box-shadow: inset 0 0 0 3px var(--deep), 0 0 0 1px rgba(255,255,255,0.35);
     flex:none;
   }
-  .brand-text .t1{font-size:19px; font-weight:700; line-height:1; font-family:'Playfair Display',serif;}
+  .brand-text .t1{font-size:19px; font-weight:700; line-height:1; font-family:'Playfair Display',serif; letter-spacing:0.02em;}
   .brand-text .t2{font-size:11px; color:#D9C79A; letter-spacing:0.08em; text-transform:uppercase; margin-top:2px;}
   .whoami{display:flex; align-items:center; gap:10px; font-size:13px;}
   .badge{
@@ -241,14 +241,40 @@
   #f-worker-list{max-height:260px; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px;}
   .worker-card .wk-info{display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;}
 
+  input[type="time"]::-webkit-inner-spin-button,
+  input[type="time"]::-webkit-outer-spin-button{-webkit-appearance:none; margin:0;}
+  input[type="time"]{-moz-appearance:textfield;}
+  input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5; cursor:pointer;}
+
+  .trade-notif{background:var(--amber); color:#fff; padding:10px 14px; border-radius:8px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;}
+  .trade-notif .dismiss{background:none; border:none; color:#fff; font-size:18px; cursor:pointer; padding:0 4px; opacity:0.8; flex-shrink:0;}
+  .trade-notif .dismiss:hover{opacity:1;}
+
+  .pending-account{border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:8px; background:var(--sand);}
+  .pending-account.manager-pending{border-left:3px solid var(--amber); background:#fdf8ec;}
+  .pending-account .pa-header{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .pending-account .pa-name{font-weight:600; font-size:14px;}
+  .pending-account .pa-role{font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; padding:2px 6px; border-radius:4px; background:var(--line); color:var(--ink-soft);}
+  .pending-account .pa-role.manager{background:var(--amber); color:#fff;}
+  .pending-account .pa-actions{display:flex; gap:8px; margin-top:8px;}
+  .confirm-btn{background:var(--seaglass); color:#fff; border:none; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;}
+  .confirm-btn:hover{opacity:0.85;}
+  .deny-btn{background:var(--coral); color:#fff; border:none; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;}
+  .deny-btn:hover{opacity:0.85;}
+
   @media (max-width:480px){
     .modal{padding:16px; max-height:85vh;}
     .modal h3{font-size:16px;}
     .field.row2{flex-direction:column; gap:0;}
+    .field.row2 > div{flex:1;}
+    .field input[type="date"],
+    .field input[type="time"]{padding:6px 8px; font-size:13px;}
     .modal-actions{flex-direction:column-reverse; align-items:stretch;}
     .modal-actions .right{justify-content:flex-end;}
     .modal-actions .del-link{text-align:center;}
     #f-worker-list{max-height:200px;}
+    .brand-text .t1{font-size:16px;}
+    .brand .ring{width:26px; height:26px;}
   }
 
   .onboard-wrap{
@@ -318,7 +344,8 @@
     loading: true,
     toast: null,
     lastSeenAvail: 0,
-    shiftRequests: []
+    shiftRequests: [],
+    users: []
   };
 
   function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -394,12 +421,13 @@
   async function loadAll(){
     const identity = JSON.parse(localStorage.getItem('pool_identity') || 'null');
     const lastSeen = parseInt(localStorage.getItem('pool_lastSeenAvail') || '0');
-    const [workers, shifts, availRequests, availability, shiftRequests] = await Promise.all([
+    const [workers, shifts, availRequests, availability, shiftRequests, users] = await Promise.all([
       api('GET','/api/workers'),
       api('GET','/api/shifts'),
       api('GET','/api/availability-requests'),
       api('GET','/api/availability'),
-      api('GET','/api/shift-requests')
+      api('GET','/api/shift-requests'),
+      api('GET','/api/users')
     ]);
     state.identity = identity;
     state.workers = workers || [];
@@ -407,6 +435,7 @@
     state.availabilityRequests = availRequests || [];
     state.availability = availability || [];
     state.shiftRequests = shiftRequests || [];
+    state.users = users || [];
     state.lastSeenAvail = lastSeen;
     state.loading = false;
     render();
@@ -569,7 +598,7 @@
   function appHTML(){
     var html = '<div class="topbar">' +
       '<div class="brand"><div class="ring"></div>' +
-      '<div class="brand-text"><div class="t1">Pool Scheduler</div><div class="t2">Staff Shift Board</div></div></div>' +
+      '<div class="brand-text"><div class="t1">Springhaven Club</div><div class="t2">Staff Shift Board</div></div></div>' +
       '<div class="whoami">';
     if(!isOperator() && hasNewAvailRequest()){
       html += '<button class="notif-bell has-new" id="notif-bell" title="New availability request!">&#128276;<span class="notif-badge">!</span></button>';
@@ -577,12 +606,30 @@
     html += '<span class="badge '+state.identity.role+'">'+ROLE_LABEL[state.identity.role]+'</span>' +
       '<span>'+escapeHtml(state.identity.name)+'</span>' +
       '<button class="link-btn" id="switch-user">Switch user</button></div></div>';
+    if(isOperator()){
+      var dismissedTrades = JSON.parse(localStorage.getItem('pool_dismissed_trades') || '[]');
+      var activeTrades = state.shifts.filter(function(s){ return s.status==='trade' && dismissedTrades.indexOf(s.id)===-1; });
+      if(activeTrades.length > 0){
+        html += '<div style="background:var(--deep); padding:0 20px 10px;">';
+        activeTrades.forEach(function(s){
+          var dt = new Date(s.date+'T00:00:00');
+          var assignedName = workerName(s.workerId);
+          html += '<div class="trade-notif">' +
+            '<span><strong>'+escapeHtml(assignedName||'A worker')+'</strong> put a shift up for trade: '+dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' '+fmtTime(s.start)+'\u2013'+fmtTime(s.end)+'</span>' +
+            '<button class="dismiss" data-dismiss-trade="'+s.id+'" title="Dismiss">&#10005;</button></div>';
+        });
+        html += '</div>';
+      }
+    }
 
     html += '<div class="tabs">' +
       '<button class="tab '+(state.tab==='schedule'?'active':'')+'" data-tab="schedule">Schedule</button>' +
       '<button class="tab '+(state.tab==='board'?'active':'')+'" data-tab="board">Open &amp; Trade'+((isOperator() && state.shiftRequests.some(function(r){return r.status==='pending';})) ? '<span class="tab-badge">!</span>' : '')+'</button>' +
       '<button class="tab '+(state.tab==='availability'?'active':'')+'" data-tab="availability">Availability'+((!isOperator() && hasNewAvailRequest()) ? '<span class="tab-badge">!</span>' : '')+'</button>';
-    if(isOperator()) html += '<button class="tab '+(state.tab==='roster'?'active':'')+'" data-tab="roster">Roster</button>';
+    if(isOperator()){
+      var pendingCount = state.users.filter(function(u){ return !u.confirmed; }).length;
+      html += '<button class="tab '+(state.tab==='roster'?'active':'')+'" data-tab="roster">Roster'+(pendingCount > 0 ? ' <span class="notif-badge" style="display:inline;">'+pendingCount+'</span>' : '')+'</button>';
+    }
     html += '</div><div class="content">';
 
     if(!isOperator() && hasPendingRequest()){
@@ -865,11 +912,32 @@
   }
 
   function rosterHTML(){
+    var pendingUsers = state.users.filter(function(u){ return !u.confirmed; });
     var html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">' +
       '<h3 style="margin:0; color:var(--deep);">Roster</h3>' +
       '<button class="primary-btn" id="add-worker">+ Add worker</button></div>';
+    if(isOperator() && pendingUsers.length > 0){
+      html += '<div style="margin-bottom:20px; padding:14px; background:#fef3cd; border:1px solid #ffc107; border-radius:8px;">' +
+        '<div style="font-weight:700; margin-bottom:10px; color:#856404;">&#128276; Pending Account Approvals ('+pendingUsers.length+')</div>';
+      pendingUsers.forEach(function(u){
+        var isManager = u.role === 'manager';
+        html += '<div class="pending-account'+(isManager ? ' manager-pending' : '')+'" data-uid="'+u.id+'">' +
+          '<div style="display:flex; align-items:center; gap:10px;">' +
+          '<span style="font-weight:600;">'+escapeHtml(u.name)+'</span>' +
+          '<span class="badge '+u.role+'">'+ROLE_LABEL[u.role]+'</span>' +
+          (isManager ? '<span style="background:var(--gold); color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px;">MANAGER REGISTRATION</span>' : '') +
+          '</div>' +
+          '<div style="margin-top:8px;">' +
+          '<button class="confirm-btn" data-confirm-user="'+u.id+'">Confirm</button> ' +
+          '<button class="deny-btn" data-deny-user="'+u.id+'">Deny</button>' +
+          '</div></div>';
+      });
+      html += '</div>';
+    }
     state.workers.forEach(function(w){
-      html += '<div class="roster-row"><span class="rname">'+escapeHtml(w.name)+'</span>' +
+      var user = state.users.find(function(u){ return u.id === w.id; });
+      var isPending = user && !user.confirmed;
+      html += '<div class="roster-row'+(isPending ? ' manager-pending' : '')+'"><span class="rname">'+escapeHtml(w.name)+'</span>' +
         '<div style="display:flex; align-items:center; gap:10px;">' +
         '<select data-role-for="'+w.id+'">';
       ROLES.forEach(function(r){
@@ -1164,6 +1232,14 @@
   function bindApp(){
     var switchUser = document.getElementById('switch-user');
     if(switchUser) switchUser.onclick = function(){ state.identity=null; state.authMode='login'; localStorage.removeItem('pool_identity'); render(); };
+    document.querySelectorAll('[data-dismiss-trade]').forEach(function(el){
+      el.onclick = function(){
+        var dismissed = JSON.parse(localStorage.getItem('pool_dismissed_trades') || '[]');
+        dismissed.push(el.dataset.dismissTrade);
+        localStorage.setItem('pool_dismissed_trades', JSON.stringify(dismissed));
+        render();
+      };
+    });
 
     document.querySelectorAll('[data-tab]').forEach(function(el){
       el.onclick = function(){
@@ -1289,6 +1365,24 @@
     });
     var addWorker = document.getElementById('add-worker');
     if(addWorker) addWorker.onclick = function(){ state.modal = {type:'addworker', data:{}}; render(); };
+    document.querySelectorAll('[data-confirm-user]').forEach(function(el){
+      el.onclick = async function(){
+        await api('PUT','/api/users/'+el.dataset.confirmUser+'/confirm');
+        state.users.forEach(function(u){ if(u.id===el.dataset.confirmUser) u.confirmed = true; });
+        showToast('Account confirmed');
+        render();
+      };
+    });
+    document.querySelectorAll('[data-deny-user]').forEach(function(el){
+      el.onclick = async function(){
+        if(!await showConfirm('This account will be permanently deleted. They can register again.', 'Deny account?')) return;
+        await api('DELETE','/api/users/'+el.dataset.denyUser);
+        state.users = state.users.filter(function(u){ return u.id!==el.dataset.denyUser; });
+        state.workers = state.workers.filter(function(w){ return w.id!==el.dataset.denyUser; });
+        showToast('Account denied');
+        render();
+      };
+    });
     var newAvailReq = document.getElementById('new-avail-request');
     if(newAvailReq) newAvailReq.onclick = function(){ state.modal = {type:'availrequest', data:{}}; render(); };
     var fillAvail = document.getElementById('fill-availability');
@@ -1400,12 +1494,13 @@
   loadAll();
   setInterval(function(){
     if(state.identity && !state.modal){
-      Promise.all([api('GET','/api/workers'), api('GET','/api/shifts'), api('GET','/api/availability-requests'), api('GET','/api/availability'), api('GET','/api/shift-requests')]).then(function(results){
+      Promise.all([api('GET','/api/workers'), api('GET','/api/shifts'), api('GET','/api/availability-requests'), api('GET','/api/availability'), api('GET','/api/shift-requests'), api('GET','/api/users')]).then(function(results){
         state.workers = results[0] || [];
         state.shifts = results[1] || [];
         state.availabilityRequests = results[2] || [];
         state.availability = results[3] || [];
         state.shiftRequests = results[4] || [];
+        state.users = results[5] || [];
         render();
       });
     }

@@ -18,9 +18,13 @@ function readData() {
   }
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   if (!data.users) data.users = [];
+  // Backfill confirmed field for existing users
+  data.users.forEach(u => { if (typeof u.confirmed === 'undefined') u.confirmed = true; });
   if (data.users.length === 0) {
     return { users: [], workers: [], shifts: [], shift_requests: [] };
   }
+  if (!data.availability_requests) data.availability_requests = [];
+  if (!data.availability) data.availability = [];
   return data;
 }
 
@@ -62,14 +66,15 @@ app.post('/api/register', (req, res) => {
     username,
     password: hashPassword(password),
     name,
-    role: finalRole
+    role: finalRole,
+    confirmed: isFirst
   };
   data.users.push(user);
   // Also create a worker entry
   if (!data.workers) data.workers = [];
   data.workers.push({ id: user.id, name, role: finalRole });
   writeData(data);
-  res.json({ id: user.id, username: user.username, name: user.name, role: finalRole });
+  res.json({ id: user.id, username: user.username, name: user.name, role: finalRole, confirmed: user.confirmed });
 });
 
 app.post('/api/login', (req, res) => {
@@ -82,7 +87,35 @@ app.post('/api/login', (req, res) => {
   if (!user || !verifyPassword(password, user.password)) {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+  if (!user.confirmed) {
+    return res.status(403).json({ error: 'Account pending operator approval. Please wait to be confirmed.' });
+  }
   res.json({ id: user.id, username: user.username, name: user.name, role: user.role });
+});
+
+// ============ USER MANAGEMENT ============
+
+app.get('/api/users', (req, res) => {
+  const data = readData();
+  const safe = data.users.map(u => ({ id: u.id, username: u.username, name: u.name, role: u.role, confirmed: u.confirmed }));
+  res.json(safe);
+});
+
+app.put('/api/users/:id/confirm', (req, res) => {
+  const data = readData();
+  const user = data.users.find(u => u.id === req.params.id);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  user.confirmed = true;
+  writeData(data);
+  res.json({ id: user.id, username: user.username, name: user.name, role: user.role, confirmed: true });
+});
+
+app.delete('/api/users/:id', (req, res) => {
+  const data = readData();
+  data.users = data.users.filter(u => u.id !== req.params.id);
+  data.workers = (data.workers || []).filter(w => w.id !== req.params.id);
+  writeData(data);
+  res.json({ ok: true });
 });
 
 // ============ WORKERS ============
