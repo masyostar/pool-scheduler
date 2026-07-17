@@ -251,10 +251,10 @@
   }
 
   .notif-badge{
-    position:absolute; top:-4px; right:-4px;
-    background:var(--buoy); color:#fff; font-size:9px; font-weight:700;
-    width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    border:2px solid var(--deep); line-height:1;
+    position:absolute; top:-6px; right:-6px;
+    background:#fff; color:var(--buoy); font-size:10px; font-weight:800;
+    width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--buoy); line-height:1;
   }
   .tab-badge{
     display:inline-flex; align-items:center; justify-content:center;
@@ -767,8 +767,8 @@
       wrap.innerHTML = '<div class="modal">' +
         '<h3>Request Availability</h3>' +
         '<p style="font-size:13px; color:var(--ink-soft); margin:0 0 14px;">Workers will be prompted to mark which days they\'re available in this range.</p>' +
-        '<div class="field row2"><div><label>From</label><input type="date" id="ar-from" value="'+m.data.fromDate||today+'"></div>' +
-        '<div><label>To</label><input type="date" id="ar-to" value="'+m.data.toDate||nextWeek+'"></div></div>' +
+        '<div class="field row2"><div><label>From</label><input type="date" id="ar-from" value="'+(m.data.fromDate||today)+'"></div>' +
+        '<div><label>To</label><input type="date" id="ar-to" value="'+(m.data.toDate||nextWeek)+'"></div></div>' +
         '<div class="modal-actions"><div></div>' +
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
         '<button class="primary-btn" id="ar-save">Send request</button></div></div></div>';
