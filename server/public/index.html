@@ -456,7 +456,7 @@
           if(!res.ok){ errEl.textContent = data.error; errEl.style.display='block'; return; }
           state.identity = data;
           localStorage.setItem('pool_identity', JSON.stringify(data));
-          await loadWorkersAndShifts();
+          await loadAll();
           render();
         } catch(e){ errEl.textContent = 'Connection error'; errEl.style.display='block'; }
       };
@@ -475,7 +475,7 @@
           if(!res.ok){ errEl.textContent = data.error; errEl.style.display='block'; return; }
           state.identity = data;
           localStorage.setItem('pool_identity', JSON.stringify(data));
-          await loadWorkersAndShifts();
+          await loadAll();
           render();
         } catch(e){ errEl.textContent = 'Connection error'; errEl.style.display='block'; }
       };
@@ -491,7 +491,7 @@
           if(!res.ok){ errEl.textContent = data.error; errEl.style.display='block'; return; }
           state.identity = data;
           localStorage.setItem('pool_identity', JSON.stringify(data));
-          await loadWorkersAndShifts();
+          await loadAll();
           render();
         } catch(e){ errEl.textContent = 'Connection error'; errEl.style.display='block'; }
       };
