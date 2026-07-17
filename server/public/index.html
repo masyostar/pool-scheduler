@@ -236,6 +236,7 @@
   .avail-opt.active-opt{background:var(--green); color:#fff; border-color:var(--green);}
   .avail-time-input{border:none; background:transparent; font-size:11px; font-weight:600; color:inherit; width:70px; padding:0; cursor:pointer;}
   .avail-opt.active-opt .avail-time-input{color:#fff;}
+  .avail-opt.active-opt-unavail{background:var(--buoy); color:#fff; border-color:var(--buoy);}
   .worker-card:hover:not(.selected){border-color:var(--deep) !important; background:var(--sand) !important;}
 
   .onboard-wrap{
@@ -803,18 +804,21 @@
             if(av.afterTime) timeLabel = ' after '+av.afterTime;
             else if(av.beforeTime) timeLabel = ' before '+av.beforeTime;
           }
-          html += '<div class="roster-row" style="cursor:pointer;" data-avail-toggle="'+d+'">' +
+          var btnAvail = '<button class="avail-opt'+(status==='available'?' active-opt':'')+'" data-avail-direct="'+d+'" data-avail-val="available">Available</button>';
+          var btnUnavail = '<button class="avail-opt'+(status==='unavailable'?' active-opt-unavail':'')+'" data-avail-direct="'+d+'" data-avail-val="unavailable">Unavailable</button>';
+          var btnClear = status ? '<button class="avail-opt" data-avail-direct="'+d+'" data-avail-val="clear" style="font-size:10px; padding:2px 6px;">&#10005; clear</button>' : '';
+          html += '<div class="roster-row" style="cursor:default;">' +
             '<span class="rname">'+dt.toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+'</span>' +
-            '<span style="font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; ' +
-            (status==='available' ? 'background:var(--green); color:#fff;' : status==='unavailable' ? 'background:var(--buoy); color:#fff;' : 'background:var(--sand); border:1px solid var(--line); color:var(--ink-soft);') +
-            '">'+(status==='available' ? 'Available'+timeLabel : status==='unavailable' ? 'Unavailable' : 'Not set')+'</span></div>';
+            '<span style="display:flex; gap:5px; align-items:center;">' +
+            btnAvail + btnUnavail + btnClear +
+            '</span></div>';
           if(status === 'available'){
             var afterChecked = av && av.afterTime ? 'active-opt' : '';
             var beforeChecked = av && av.beforeTime ? 'active-opt' : '';
             var allDayChecked = (!av || (!av.afterTime && !av.beforeTime)) ? 'active-opt' : '';
             var afterVal = (av && av.afterTime) ? av.afterTime : '09:00';
             var beforeVal = (av && av.beforeTime) ? av.beforeTime : '17:00';
-            html += '<div class="roster-row" style="cursor:default; padding:4px 14px 8px;" onclick="event.stopPropagation()">' +
+            html += '<div class="roster-row" style="cursor:default; padding:4px 14px 8px;">' +
               '<span style="font-size:11px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
               '<button class="avail-opt '+allDayChecked+'" data-avail-set="'+d+'" data-avail-type="allday">All day</button>' +
               '<button class="avail-opt '+afterChecked+'" data-avail-set="'+d+'" data-avail-type="after">After <input type="time" class="avail-time-input" data-avail-set="'+d+'" data-avail-type="after" value="'+afterVal+'" onclick="event.stopPropagation()"/></button>' +
@@ -1235,23 +1239,36 @@
         render();
       };
     });
-    document.querySelectorAll('[data-avail-toggle]').forEach(function(el){
+    document.querySelectorAll('[data-avail-direct]').forEach(function(el){
       el.onclick = async function(){
-        var date = el.dataset.availToggle;
+        var date = el.dataset.availDirect;
+        var val = el.dataset.availVal;
         var existing = myAvailForDate(date);
-        if(existing){
-          if(existing.available){
-            await api('PUT','/api/availability/'+existing.id, {available:false, afterTime:'', beforeTime:''});
-            existing.available = false;
-            existing.afterTime = '';
-            existing.beforeTime = '';
-          } else {
+        if(val === 'clear'){
+          if(existing){
             await api('DELETE','/api/availability/'+existing.id);
             state.availability = state.availability.filter(function(a){ return a.id!==existing.id; });
           }
-        } else {
-          var newAv = await api('POST','/api/availability',{workerId:state.identity.id, date:date, available:true});
-          state.availability.push(newAv);
+        } else if(val === 'available'){
+          if(existing){
+            if(!existing.available){
+              await api('PUT','/api/availability/'+existing.id, {available:true, afterTime:'', beforeTime:''});
+              existing.available = true; existing.afterTime = ''; existing.beforeTime = '';
+            }
+          } else {
+            var newAv = await api('POST','/api/availability',{workerId:state.identity.id, date:date, available:true});
+            state.availability.push(newAv);
+          }
+        } else if(val === 'unavailable'){
+          if(existing){
+            if(existing.available){
+              await api('PUT','/api/availability/'+existing.id, {available:false, afterTime:'', beforeTime:''});
+              existing.available = false; existing.afterTime = ''; existing.beforeTime = '';
+            }
+          } else {
+            var newAv = await api('POST','/api/availability',{workerId:state.identity.id, date:date, available:false});
+            state.availability.push(newAv);
+          }
         }
         render();
       };
