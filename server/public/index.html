@@ -445,7 +445,14 @@
   function workerName(id){ const w = state.workers.find(w=>w.id===id); return w? w.name : null; }
   function hasNewAvailRequest(){
     if(isOperator()) return false;
-    return state.availabilityRequests.some(function(r){ return new Date(r.createdAt).getTime() > state.lastSeenAvail; });
+    var newReqs = state.availabilityRequests.filter(function(r){ return new Date(r.createdAt).getTime() > state.lastSeenAvail; });
+    if(newReqs.length === 0) return false;
+    var latestNew = newReqs[newReqs.length - 1];
+    var dates = datesInRange(latestNew.fromDate, latestNew.toDate);
+    var allFilled = dates.every(function(d){
+      return state.availability.some(function(a){ return a.workerId===state.identity.id && a.date===d; });
+    });
+    return !allFilled;
   }
   function markAvailSeen(){
     state.lastSeenAvail = Date.now();
@@ -808,12 +815,14 @@
           var toDate = new Date(req.toDate+'T00:00:00');
           var workersWithAvail = 0;
           state.workers.forEach(function(w){
+            if(w.role === 'operator') return;
             var hasResponse = state.availability.some(function(a){ return a.workerId===w.id && a.date>=req.fromDate && a.date<=req.toDate; });
             if(hasResponse) workersWithAvail++;
           });
+          var nonOperatorCount = state.workers.filter(function(w){ return w.role !== 'operator'; }).length;
           html += '<div class="board-item"><div class="left">' +
             '<div class="d1">'+fmtRange(fromDate)+'</div>' +
-            '<div class="d2">'+workersWithAvail+' of '+state.workers.length+' workers responded</div>' +
+            '<div class="d2">'+workersWithAvail+' of '+nonOperatorCount+' workers responded</div>' +
             '<div class="d3">Created '+new Date(req.createdAt).toLocaleDateString()+'</div></div>' +
             '<button class="del-link" data-delete-req="'+req.id+'">Delete</button></div>';
         });
@@ -823,17 +832,22 @@
 
         var latestReq = state.availabilityRequests[state.availabilityRequests.length - 1];
         if(latestReq){
+          var allDatesSet = {};
+          state.availabilityRequests.forEach(function(req){
+            datesInRange(req.fromDate, req.toDate).forEach(function(d){ allDatesSet[d] = true; });
+          });
+          var dates = Object.keys(allDatesSet).sort();
           html += '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:13px;">' +
             '<tr><th style="text-align:left; padding:6px 8px; border-bottom:2px solid var(--line); font-size:11px; text-transform:uppercase; color:var(--ink-soft);">Worker</th>';
-          var dates = datesInRange(latestReq.fromDate, latestReq.toDate);
           dates.forEach(function(d){
             var dayName = new Date(d+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'});
             html += '<th style="text-align:center; padding:6px 4px; border-bottom:2px solid var(--line); font-size:11px; text-transform:uppercase; color:var(--ink-soft); min-width:50px;">'+dayName+'</th>';
           });
           html += '</tr>';
           state.workers.forEach(function(w){
+            if(w.role === 'operator') return;
             html += '<tr><td style="padding:6px 8px; border-bottom:1px solid var(--line); font-weight:600;">'+escapeHtml(w.name)+'</td>';
-            dates.forEach(function(d){
+        allDates.forEach(function(d){
               var av = workerAvailForDate(w.id, d);
               if(av){
                 if(av.available){
@@ -860,10 +874,22 @@
           '<h3 style="margin:0 0 6px;">Nothing requested yet</h3>' +
           '<p style="font-size:13px;">The operator hasn\'t requested availability yet. Check back soon.</p></div>';
       } else {
+        var allDatesSet = {};
+        state.availabilityRequests.forEach(function(req){
+          datesInRange(req.fromDate, req.toDate).forEach(function(d){ allDatesSet[d] = true; });
+        });
+        var allDates = Object.keys(allDatesSet).sort();
         var latestReq = state.availabilityRequests[state.availabilityRequests.length - 1];
-        var dates = datesInRange(latestReq.fromDate, latestReq.toDate);
         var isNew = new Date(latestReq.createdAt).getTime() > state.lastSeenAvail;
-        html += '<p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Mark each day as available or unavailable for '+fmtRange(new Date(latestReq.fromDate+'T00:00:00'))+(isNew ? ' <span style="background:var(--buoy); color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; text-transform:uppercase;">New</span>' : '')+'</p>';
+        var filledCount = allDates.filter(function(d){
+          return state.availability.some(function(a){ return a.workerId===state.identity.id && a.date===d; });
+        }).length;
+        var allDone = filledCount === allDates.length;
+        if(allDone){
+          html += '<div style="background:var(--green); color:#fff; padding:12px 16px; border-radius:8px; margin-bottom:14px; font-weight:600; font-size:13px;">&#10003; All availability filled out ('+filledCount+' of '+allDates.length+' days)</div>';
+        } else {
+          html += '<p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Mark each day as available or unavailable ('+filledCount+' of '+allDates.length+' days filled)</p>';
+        }
         dates.forEach(function(d){
           var dt = new Date(d+'T00:00:00');
           var av = myAvailForDate(d);
