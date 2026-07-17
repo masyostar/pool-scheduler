@@ -552,6 +552,8 @@
       });
       html += '</select><button class="rm-btn" data-remove-worker="'+w.id+'">Remove</button></div></div>';
     });
+    html += '<div style="margin-top:30px; border-top:1px solid var(--line); padding-top:16px;">' +
+      '<button class="del-link" id="reset-all" style="font-size:13px;">Reset all data (clear everything)</button></div>';
     return html;
   }
 
@@ -727,6 +729,17 @@
     });
     var addWorker = document.getElementById('add-worker');
     if(addWorker) addWorker.onclick = function(){ state.modal = {type:'addworker', data:{}}; render(); };
+    var resetAll = document.getElementById('reset-all');
+    if(resetAll) resetAll.onclick = async function(){
+      if(!confirm('Are you sure? This will delete ALL workers and shifts permanently.')) return;
+      await api('POST','/api/reset');
+      state.workers = [];
+      state.shifts = [];
+      state.identity = null;
+      localStorage.removeItem('pool_identity');
+      showToast('All data cleared');
+      render();
+    };
   }
 
   loadAll();

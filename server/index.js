@@ -151,6 +151,13 @@ function timeToMin(t) {
   return h * 60 + m;
 }
 
+// ============ RESET ============
+
+app.post('/api/reset', (req, res) => {
+  writeData({ workers: [], shifts: [] });
+  res.json({ ok: true });
+});
+
 // ============ SERVE STATIC HTML ============
 
 app.use(express.static(PUBLIC_DIR));
