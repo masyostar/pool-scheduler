@@ -797,12 +797,14 @@
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
         '<button class="primary-btn" id="f-save">'+(editing? 'Save changes':'Add shift')+'</button></div></div></div>';
     } else if(m.type === 'addworker'){
+      var roleOpts = ROLES.filter(function(r){ return r !== 'operator'; }).map(function(r){
+        return '<option value="'+r+'">'+ROLE_LABEL[r]+'</option>';
+      }).join('');
       wrap.innerHTML = '<div class="modal">' +
         '<h3>Add worker</h3>' +
         '<div class="field"><label>Name</label><input id="w-name" placeholder="Full name"></div>' +
-        '<div class="field"><label>Role</label><select id="w-role">';
-      ROLES.forEach(function(r){ wrap.innerHTML += '<option value="'+r+'">'+ROLE_LABEL[r]+'</option>'; });
-      wrap.innerHTML += '</select></div>' +
+        '<div class="field"><label>Role</label><select id="w-role">' + roleOpts +
+        '</select></div>' +
         '<div class="modal-actions"><div></div>' +
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
         '<button class="primary-btn" id="w-save">Add</button></div></div></div>';
