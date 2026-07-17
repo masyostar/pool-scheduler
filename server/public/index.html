@@ -396,8 +396,9 @@
 
   // ================= AUTH (Login/Register/Setup) =================
   function onboardHTML(){
-    var mode = state.authMode || (hasRoster ? 'login' : 'setup');
     var hasRoster = state.workers && state.workers.length > 0;
+    var mode = state.authMode || (hasRoster ? 'login' : 'setup');
+    state.authMode = mode;
     var html = '<div class="onboard-wrap"><div class="onboard-card">';
     if(mode === 'setup'){
       html += '<h2>Set up your pool\'s shift board</h2>' +
