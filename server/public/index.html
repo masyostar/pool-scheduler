@@ -890,7 +890,7 @@
         } else {
           html += '<p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Mark each day as available or unavailable ('+filledCount+' of '+allDates.length+' days filled)</p>';
         }
-        dates.forEach(function(d){
+        allDates.forEach(function(d){
           var dt = new Date(d+'T00:00:00');
           var av = myAvailForDate(d);
           var status = av ? (av.available ? 'available' : 'unavailable') : '';
