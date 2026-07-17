@@ -14,12 +14,12 @@ app.use(express.json());
 
 function readData() {
   if (!fs.existsSync(DATA_FILE)) {
-    return { users: [], workers: [], shifts: [] };
+    return { users: [], workers: [], shifts: [], shift_requests: [] };
   }
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   if (!data.users) data.users = [];
   if (data.users.length === 0) {
-    return { users: [], workers: [], shifts: [] };
+    return { users: [], workers: [], shifts: [], shift_requests: [] };
   }
   return data;
 }
@@ -273,10 +273,43 @@ function timeToMin(t) {
   return h * 60 + m;
 }
 
+// ============ SHIFT REQUESTS ============
+
+app.get('/api/shift-requests', (req, res) => {
+  const data = readData();
+  res.json(data.shift_requests || []);
+});
+
+app.post('/api/shift-requests', (req, res) => {
+  const data = readData();
+  if (!data.shift_requests) data.shift_requests = [];
+  const request = { id: uid(), ...req.body, status: 'pending', createdAt: new Date().toISOString() };
+  data.shift_requests.push(request);
+  writeData(data);
+  res.json(request);
+});
+
+app.put('/api/shift-requests/:id', (req, res) => {
+  const data = readData();
+  if (!data.shift_requests) data.shift_requests = [];
+  const idx = data.shift_requests.findIndex(r => r.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  data.shift_requests[idx] = { ...data.shift_requests[idx], ...req.body };
+  writeData(data);
+  res.json(data.shift_requests[idx]);
+});
+
+app.delete('/api/shift-requests/:id', (req, res) => {
+  const data = readData();
+  data.shift_requests = (data.shift_requests || []).filter(r => r.id !== req.params.id);
+  writeData(data);
+  res.json({ ok: true });
+});
+
 // ============ RESET ============
 
 app.post('/api/reset', (req, res) => {
-  writeData({ users: [], workers: [], shifts: [], availability_requests: [], availability: [] });
+  writeData({ users: [], workers: [], shifts: [], availability_requests: [], availability: [], shift_requests: [] });
   res.json({ ok: true });
 });
 

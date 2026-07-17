@@ -304,7 +304,8 @@
     confirmModal: null,
     loading: true,
     toast: null,
-    lastSeenAvail: 0
+    lastSeenAvail: 0,
+    shiftRequests: []
   };
 
   function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -380,17 +381,19 @@
   async function loadAll(){
     const identity = JSON.parse(localStorage.getItem('pool_identity') || 'null');
     const lastSeen = parseInt(localStorage.getItem('pool_lastSeenAvail') || '0');
-    const [workers, shifts, availRequests, availability] = await Promise.all([
+    const [workers, shifts, availRequests, availability, shiftRequests] = await Promise.all([
       api('GET','/api/workers'),
       api('GET','/api/shifts'),
       api('GET','/api/availability-requests'),
-      api('GET','/api/availability')
+      api('GET','/api/availability'),
+      api('GET','/api/shift-requests')
     ]);
     state.identity = identity;
     state.workers = workers || [];
     state.shifts = shifts || [];
     state.availabilityRequests = availRequests || [];
     state.availability = availability || [];
+    state.shiftRequests = shiftRequests || [];
     state.lastSeenAvail = lastSeen;
     state.loading = false;
     render();
@@ -564,7 +567,7 @@
 
     html += '<div class="tabs">' +
       '<button class="tab '+(state.tab==='schedule'?'active':'')+'" data-tab="schedule">Schedule</button>' +
-      '<button class="tab '+(state.tab==='board'?'active':'')+'" data-tab="board">Open &amp; Trade</button>' +
+      '<button class="tab '+(state.tab==='board'?'active':'')+'" data-tab="board">Open &amp; Trade'+((isOperator() && state.shiftRequests.some(function(r){return r.status==='pending';})) ? '<span class="tab-badge">!</span>' : '')+'</button>' +
       '<button class="tab '+(state.tab==='availability'?'active':'')+'" data-tab="availability">Availability'+((!isOperator() && hasNewAvailRequest()) ? '<span class="tab-badge">!</span>' : '')+'</button>';
     if(isOperator()) html += '<button class="tab '+(state.tab==='roster'?'active':'')+'" data-tab="roster">Roster</button>';
     html += '</div><div class="content">';
@@ -658,15 +661,37 @@
   }
 
   function boardHTML(){
+    var pendingReqs = state.shiftRequests.filter(function(r){ return r.status==='pending'; });
     var upcoming = state.shifts
       .filter(function(s){ return (s.status==='trade' || s.status==='open') && s.date >= todayISO(); })
       .sort(function(a,b){ return (a.date+a.start).localeCompare(b.date+b.start); });
-    if(upcoming.length===0){
+    var html = '';
+    if(isOperator() && pendingReqs.length > 0){
+      html += '<div style="margin-bottom:20px;">' +
+        '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">' +
+        '<h3 style="margin:0; color:var(--deep);">Pending shift requests</h3>' +
+        '<span style="background:var(--buoy); color:#fff; font-size:10px; font-weight:700; padding:2px 7px; border-radius:8px;">'+pendingReqs.length+'</span></div>';
+      pendingReqs.forEach(function(req){
+        html += '<div class="board-item" style="border-left:3px solid var(--buoy);">' +
+          '<div class="left">' +
+          '<div class="d1">'+escapeHtml(req.workerName)+' wants to claim a shift</div>' +
+          '<div class="d2">'+new Date(req.shiftDate+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' \u00b7 '+escapeHtml(req.shiftTime)+'</div>' +
+          (req.comment ? '<div class="d3" style="font-style:italic;">"'+escapeHtml(req.comment)+'"</div>' : '') +
+          '<div class="d3" style="color:#999;">Requested '+new Date(req.createdAt).toLocaleDateString()+'</div>' +
+          '</div>' +
+          '<div style="display:flex; gap:6px;">' +
+          '<button class="primary-btn" data-approve-req="'+req.id+'" style="background:var(--green); font-size:12px;">Approve</button>' +
+          '<button class="del-link" data-deny-req="'+req.id+'">Deny</button>' +
+          '</div></div>';
+      });
+      html += '</div>';
+    }
+    if(upcoming.length===0 && !html){
       return '<div class="empty-state"><div class="ring"></div>' +
         '<h3 style="margin:0 0 6px;">Nothing open right now</h3>' +
         '<p style="font-size:13px;">Shifts put up for trade or dropped will show up here for anyone to claim.</p></div>';
     }
-    var html = '<div style="margin-bottom:14px; font-size:13px; color:var(--ink-soft);">Shifts anyone can pick up, soonest first.</div>';
+    html += '<div style="margin-bottom:14px; font-size:13px; color:var(--ink-soft);">Shifts anyone can pick up, soonest first.</div>';
     upcoming.forEach(function(s){
       var dt = new Date(s.date+'T00:00:00');
       var assignedName = s.workerId ? workerName(s.workerId) : null;
@@ -931,6 +956,17 @@
         '<div class="modal-actions"><div></div>' +
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
         '<button class="primary-btn" id="ar-save">Send request</button></div></div></div>';
+    } else if(m.type === 'claimrequest'){
+      var s = m.data.shift;
+      var shiftLabel = new Date(s.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'})+' '+s.start+'-'+s.end;
+      wrap.innerHTML = '<div class="modal">' +
+        '<h3 style="color:var(--buoy);">Schedule conflict</h3>' +
+        '<p style="font-size:13px; color:var(--ink); margin:0 0 6px;">You already have a shift on '+new Date(s.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' at <strong>'+m.data.conflictTimes+'</strong>.</p>' +
+        '<p style="font-size:13px; color:var(--ink-soft); margin:0 0 14px;">You\'re trying to claim: <strong>'+shiftLabel+'</strong></p>' +
+        '<div class="field"><label>Comment (optional)</label><textarea id="cr-comment" rows="3" placeholder="e.g. I can swap my other shift to a different day" style="width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; font-family:Inter,sans-serif; font-size:13px; resize:vertical;"></textarea></div>' +
+        '<div class="modal-actions"><div></div>' +
+        '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
+        '<button class="primary-btn" id="cr-send" style="background:var(--buoy);">Send request to operator</button></div></div></div>';
     }
 
     app.appendChild(wrap);
@@ -1053,6 +1089,21 @@
         render();
       };
     }
+    var crSend = document.getElementById('cr-send');
+    if(crSend){
+      crSend.onclick = async function(){
+        var comment = document.getElementById('cr-comment').value.trim();
+        var s = m.data.shift;
+        var shiftLabel = new Date(s.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' '+s.start+'-'+s.end;
+        var msg = 'Send a request to the operator to claim this shift?\n\nShift: '+shiftLabel;
+        if(comment) msg += '\nComment: '+comment;
+        if(!await showConfirm(msg, 'Confirm request')) return;
+        var req = await api('POST','/api/shift-requests',{shiftId:s.id, workerId:state.identity.id, workerName:state.identity.name, shiftDate:s.date, shiftTime:s.start+'-'+s.end, comment:comment});
+        state.shiftRequests.push(req);
+        state.modal = null;
+        showToast('Request sent to operator'); render();
+      };
+    }
   }
 
   // ================= EVENT BINDING =================
@@ -1109,10 +1160,45 @@
         showToast('Shift dropped'); render();
       };
     });
+    document.querySelectorAll('[data-approve-req]').forEach(function(el){
+      el.onclick = async function(){
+        var reqId = el.dataset.approveReq;
+        var req = state.shiftRequests.find(function(r){ return r.id===reqId; });
+        if(!req) return;
+        await api('PUT','/api/shifts/'+req.shiftId, {status:'assigned', workerId:req.workerId});
+        var s = state.shifts.find(function(s){ return s.id===req.shiftId; });
+        if(s){ s.status='assigned'; s.workerId=req.workerId; }
+        await api('PUT','/api/shift-requests/'+reqId, {status:'approved'});
+        req.status='approved';
+        showToast('Shift assigned to '+req.workerName); render();
+      };
+    });
+    document.querySelectorAll('[data-deny-req]').forEach(function(el){
+      el.onclick = async function(){
+        var reqId = el.dataset.denyReq;
+        if(!await showConfirm('Deny this shift request?', 'Deny request')) return;
+        await api('PUT','/api/shift-requests/'+reqId, {status:'denied'});
+        var req = state.shiftRequests.find(function(r){ return r.id===reqId; });
+        if(req) req.status='denied';
+        showToast('Request denied'); render();
+      };
+    });
     document.querySelectorAll('[data-claim]').forEach(function(el){
       el.onclick = async function(){
-        await api('PUT','/api/shifts/'+el.dataset.claim, {status:'assigned', workerId:state.identity.id});
-        var s=state.shifts.find(function(s){ return s.id===el.dataset.claim; });
+        var shiftId = el.dataset.claim;
+        var shift = state.shifts.find(function(s){ return s.id===shiftId; });
+        if(!shift) return;
+        var myConflicts = state.shifts.filter(function(s){
+          return s.workerId === state.identity.id && s.date === shift.date && s.id !== shift.id && s.status !== 'trade';
+        });
+        if(myConflicts.length > 0){
+          var cTimes = myConflicts.map(function(c){ return c.start+'-'+c.end; }).join(', ');
+          state.modal = {type:'claimrequest', data:{shiftId:shiftId, shift:shift, conflictTimes:cTimes}};
+          render();
+          return;
+        }
+        await api('PUT','/api/shifts/'+shiftId, {status:'assigned', workerId:state.identity.id});
+        var s=state.shifts.find(function(s){ return s.id===shiftId; });
         s.status='assigned'; s.workerId = state.identity.id;
         showToast('Shift claimed \u2014 it is yours now'); render();
       };
@@ -1235,11 +1321,12 @@
   loadAll();
   setInterval(function(){
     if(state.identity && !state.modal){
-      Promise.all([api('GET','/api/workers'), api('GET','/api/shifts'), api('GET','/api/availability-requests'), api('GET','/api/availability')]).then(function(results){
+      Promise.all([api('GET','/api/workers'), api('GET','/api/shifts'), api('GET','/api/availability-requests'), api('GET','/api/availability'), api('GET','/api/shift-requests')]).then(function(results){
         state.workers = results[0] || [];
         state.shifts = results[1] || [];
         state.availabilityRequests = results[2] || [];
         state.availability = results[3] || [];
+        state.shiftRequests = results[4] || [];
         render();
       });
     }
