@@ -887,7 +887,7 @@
   // ================= EVENT BINDING =================
   function bindApp(){
     var switchUser = document.getElementById('switch-user');
-    if(switchUser) switchUser.onclick = function(){ state.identity=null; localStorage.removeItem('pool_identity'); render(); };
+    if(switchUser) switchUser.onclick = function(){ state.identity=null; state.authMode='login'; localStorage.removeItem('pool_identity'); render(); };
 
     document.querySelectorAll('[data-tab]').forEach(function(el){
       el.onclick = function(){
