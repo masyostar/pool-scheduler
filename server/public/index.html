@@ -192,8 +192,12 @@
     text-align:center; padding:50px 20px; color:var(--ink-soft);
   }
   .empty-state .ring{
-    width:44px; height:44px; border-radius:50%; border:5px solid var(--buoy);
-    margin:0 auto 14px; box-shadow:inset 0 0 0 3px var(--sand);
+    width:44px; height:44px; border-radius:50%; border:5px solid var(--water-light);
+    margin:0 auto 14px; box-shadow:inset 0 0 0 3px var(--sand); position:relative;
+  }
+  .empty-state .ring::after{
+    content:""; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:18px; height:3px; background:var(--water-light); border-radius:2px;
   }
 
   .roster-row{
@@ -612,9 +616,9 @@
         '<button class="primary-btn" id="new-avail-request">+ Request availability</button></div>';
 
       if(state.availabilityRequests.length === 0){
-        html += '<div class="empty-state"><div class="ring"></div>' +
+        html += '<div class="empty-state">' +
           '<h3 style="margin:0 0 6px;">No requests yet</h3>' +
-          '<p style="font-size:13px;">Create a request to ask workers when they\'re available for an upcoming period.</p></div>';
+          '<p style="font-size:13px;">Click "+ Request availability" above to ask workers when they\'re available for an upcoming period.</p></div>';
       } else {
         state.availabilityRequests.slice().reverse().forEach(function(req){
           var fromDate = new Date(req.fromDate+'T00:00:00');
@@ -665,7 +669,7 @@
     } else {
       var html = '<h3 style="margin:0 0 14px; color:var(--deep);">My Availability</h3>';
       if(state.availabilityRequests.length === 0){
-        html += '<div class="empty-state"><div class="ring"></div>' +
+        html += '<div class="empty-state">' +
           '<h3 style="margin:0 0 6px;">Nothing requested yet</h3>' +
           '<p style="font-size:13px;">The operator hasn\'t requested availability yet. Check back soon.</p></div>';
       } else {
