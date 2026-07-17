@@ -337,6 +337,25 @@
     dt.setHours(0,0,0,0);
     return dt;
   }
+  function weeklyHoursFor(workerId, date){
+    var ws = startOfWeek(new Date(date+'T00:00:00'));
+    var we = new Date(ws); we.setDate(we.getDate()+6);
+    var wsISO = fmtISO(ws); var weISO = fmtISO(we);
+    var total = 0;
+    state.shifts.forEach(function(s){
+      if(s.workerId !== workerId || s.date < wsISO || s.date > weISO) return;
+      if(s.status === 'trade') return;
+      var parts1 = s.start.split(':'); var parts2 = s.end.split(':');
+      var h1 = parseInt(parts1[0])*60 + parseInt(parts1[1]);
+      var h2 = parseInt(parts2[0])*60 + parseInt(parts2[1]);
+      total += Math.max(0, h2 - h1);
+    });
+    return total;
+  }
+  function fmtHours(mins){
+    var h = Math.floor(mins/60); var m = mins%60;
+    return m ? h+'h '+m+'m' : h+'h';
+  }
   function fmtISO(d){
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
@@ -842,6 +861,15 @@
             else { avLabel = 'Available all day'; avColor = 'var(--green)'; }
           } else { avLabel = 'Unavailable'; avColor = 'var(--buoy)'; }
         } else { avLabel = 'No availability set'; avColor = '#ccc'; }
+        var weekMins = weeklyHoursFor(w.id, shiftDate);
+        if(editing && m.data.workerId === w.id){
+          var oldS = state.shifts.find(function(s){ return s.id===m.data.id; });
+          if(oldS && oldS.date === shiftDate){
+            var op1 = oldS.start.split(':'); var op2 = oldS.end.split(':');
+            weekMins -= Math.max(0, (parseInt(op2[0])*60+parseInt(op2[1])) - (parseInt(op1[0])*60+parseInt(op1[1])));
+          }
+        }
+        var hoursLabel = fmtHours(weekMins);
         var conflicts = state.shifts.filter(function(s){
           return s.workerId === w.id && s.date === shiftDate && s.id !== m.data.id;
         });
@@ -855,6 +883,9 @@
         return '<div class="worker-card'+(isSelected?' selected':'')+'" data-select-worker="'+w.id+'" style="border:1px solid '+(isSelected?'var(--deep)':'var(--line)')+'; border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; background:'+(isSelected?'var(--deep); color:#fff;':'#fff;')+'">' +
           '<div style="display:flex; justify-content:space-between; align-items:center;">' +
           '<span style="font-weight:600; font-size:13px;">'+escapeHtml(w.name)+' '+roleBadge+'</span>' +
+          '<span style="font-size:10px; font-weight:600; color:var(--ink-soft);">Week: '+hoursLabel+'</span>' +
+          '</div>' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:3px;">' +
           '<span style="font-size:10px; font-weight:600; color:'+avColor+';">'+avLabel+'</span>' +
           '</div>' + (conflictLabel ? '<div style="margin-top:3px;">'+conflictLabel+'</div>' : '') +
           '</div>';
