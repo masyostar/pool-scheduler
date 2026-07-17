@@ -301,6 +301,7 @@
     tab: 'schedule',
     weekStart: startOfWeek(new Date()),
     modal: null,
+    confirmModal: null,
     loading: true,
     toast: null,
     lastSeenAvail: 0
@@ -319,6 +320,13 @@
     state.toast = msg;
     render();
     setTimeout(()=>{ state.toast = null; render(); }, 2200);
+  }
+
+  function showConfirm(msg, title){
+    return new Promise(function(resolve){
+      state.confirmModal = {msg:msg, title:title||'Are you sure?', resolve:resolve};
+      render();
+    });
   }
 
   function startOfWeek(d){
@@ -396,6 +404,21 @@
       const t = document.createElement('div');
       t.className = 'toast'; t.textContent = state.toast;
       app.appendChild(t);
+    }
+    if(state.confirmModal){
+      var cm = state.confirmModal;
+      var cmWrap = document.createElement('div');
+      cmWrap.className = 'modal-bg';
+      cmWrap.innerHTML = '<div class="modal" style="max-width:380px;">' +
+        '<h3 style="color:var(--buoy);">'+escapeHtml(cm.title)+'</h3>' +
+        '<p style="font-size:13px; color:var(--ink); margin:0 0 18px; line-height:1.5; white-space:pre-line;">'+escapeHtml(cm.msg)+'</p>' +
+        '<div class="modal-actions"><div></div>' +
+        '<div class="right"><button class="cancel-btn" id="cm-no">Cancel</button>' +
+        '<button class="primary-btn" id="cm-yes" style="background:var(--buoy);">Continue anyway</button></div></div></div>';
+      app.appendChild(cmWrap);
+      cmWrap.addEventListener('click', function(e){ if(e.target.id==='modal-bg'){ state.confirmModal=null; cm.resolve(false); render(); } });
+      document.getElementById('cm-no').onclick = function(){ state.confirmModal=null; cm.resolve(false); render(); };
+      document.getElementById('cm-yes').onclick = function(){ state.confirmModal=null; cm.resolve(true); render(); };
     }
   }
 
@@ -940,7 +963,7 @@
           }
           if(blocked){
             var w = state.workers.find(function(w){ return w.id===workerId; });
-            if(!confirm(escapeHtml(w ? w.name : 'This worker')+' '+reason+'.\n\nAssign anyway?')) return;
+            if(!await showConfirm((w ? w.name : 'This worker')+' '+reason, 'Worker not available')) return;
           }
           var conflictShifts = state.shifts.filter(function(s){
             return s.workerId === workerId && s.date === date && s.id !== m.data.id && s.status !== 'trade';
@@ -948,7 +971,7 @@
           if(conflictShifts.length > 0){
             var w = state.workers.find(function(w){ return w.id===workerId; });
             var cTimes = conflictShifts.map(function(c){ return c.start+'-'+c.end; }).join(', ');
-            if(!confirm(escapeHtml(w ? w.name : 'This worker')+' already has a shift on '+date+' ('+cTimes+').\n\nAssign anyway?')) return;
+            if(!await showConfirm((w ? w.name : 'This worker')+' already has a shift on '+date+' ('+cTimes+').', 'Schedule conflict')) return;
           }
         }
         if(m.data.id){
@@ -966,7 +989,7 @@
     var del = document.getElementById('f-delete');
     if(del){
       del.onclick = async function(){
-        if(!confirm('Delete this shift?')) return;
+        if(!await showConfirm('This will permanently remove this shift from the schedule.', 'Delete shift?')) return;
         await api('DELETE','/api/shifts/'+m.data.id);
         state.shifts = state.shifts.filter(function(s){ return s.id!==m.data.id; });
         state.modal = null;
@@ -1049,7 +1072,7 @@
     });
     document.querySelectorAll('[data-drop]').forEach(function(el){
       el.onclick = async function(){
-        if(!confirm('Drop this shift? It will become unfilled and open for anyone to claim.')) return;
+        if(!await showConfirm('The shift will become unfilled and open for anyone to claim.', 'Drop shift?')) return;
         await api('PUT','/api/shifts/'+el.dataset.drop, {status:'open', workerId:null});
         var s=state.shifts.find(function(s){ return s.id===el.dataset.drop; }); s.status='open'; s.workerId=null;
         showToast('Shift dropped'); render();
@@ -1074,7 +1097,7 @@
     });
     document.querySelectorAll('[data-remove-worker]').forEach(function(el){
       el.onclick = async function(){
-        if(!confirm('Remove this worker? Their upcoming shifts will become unfilled.')) return;
+        if(!await showConfirm('Their upcoming shifts will become unfilled and open for others.', 'Remove worker?')) return;
         await api('DELETE','/api/workers/'+el.dataset.removeWorker);
         state.shifts.forEach(function(s){ if(s.workerId===el.dataset.removeWorker){ s.workerId=null; s.status='open'; } });
         state.workers = state.workers.filter(function(w){ return w.id!==el.dataset.removeWorker; });
@@ -1089,7 +1112,7 @@
     if(fillAvail) fillAvail.onclick = function(){ state.tab = 'availability'; render(); };
     document.querySelectorAll('[data-delete-req]').forEach(function(el){
       el.onclick = async function(){
-        if(!confirm('Delete this availability request?')) return;
+        if(!await showConfirm('Workers will no longer see this request.', 'Delete request?')) return;
         await api('DELETE','/api/availability-requests/'+el.dataset.deleteReq);
         state.availabilityRequests = state.availabilityRequests.filter(function(r){ return r.id!==el.dataset.deleteReq; });
         render();
@@ -1166,7 +1189,7 @@
     });
     var resetAll = document.getElementById('reset-all');
     if(resetAll) resetAll.onclick = async function(){
-      if(!confirm('Are you sure? This will delete ALL workers and shifts permanently.')) return;
+      if(!await showConfirm('This will permanently delete ALL workers, shifts, and availability data.', 'Reset everything?')) return;
       await api('POST','/api/reset');
       state.workers = [];
       state.shifts = [];
