@@ -394,69 +394,80 @@
     }
   }
 
-  // ================= ONBOARDING =================
+  // ================= AUTH (Login/Register) =================
   function onboardHTML(){
-    const hasRoster = state.workers.length > 0;
-    let html = '<div class="onboard-wrap"><div class="onboard-card">';
-    if(!hasRoster){
-      html += '<h2>Set up your pool\'s shift board</h2>' +
-        '<p>Nobody\'s set this up yet. Enter your name to create the pool staff roster \u2014 you\'ll be the Operator, in charge of building and editing the schedule.</p>' +
-        '<div class="field"><label>Your name</label><input id="ob-name" placeholder="e.g. Jamie Rivera"/></div>' +
-        '<button class="primary-btn" id="ob-create" style="width:100%; padding:10px;">Create schedule &amp; become Operator</button>';
+    var mode = state.authMode || 'login';
+    var html = '<div class="onboard-wrap"><div class="onboard-card">';
+    if(mode === 'login'){
+      html += '<h2>Welcome back</h2>' +
+        '<p>Sign in to view your schedule and shifts.</p>' +
+        '<div class="field"><label>Username</label><input id="auth-user" placeholder="Username" autocomplete="username"/></div>' +
+        '<div class="field"><label>Password</label><input id="auth-pass" type="password" placeholder="Password" autocomplete="current-password"/></div>' +
+        '<div id="auth-error" style="color:var(--buoy); font-size:12px; margin-bottom:10px; display:none;"></div>' +
+        '<button class="primary-btn" id="auth-submit" style="width:100%; padding:10px;">Sign in</button>' +
+        '<div class="divider-or">or</div>' +
+        '<button class="link-btn" id="show-register" style="color:var(--deep); text-decoration:underline; font-size:13px; font-weight:600; width:100%; text-align:center; display:block;">Create an account</button>';
     } else {
-      html += '<h2>Who\'s this?</h2><p>Pick your name to view and manage your shifts.</p>';
-      const byRole = {operator:[], manager:[], lifeguard:[], gateperson:[]};
-      state.workers.forEach(function(w){ byRole[w.role] = byRole[w.role] || []; byRole[w.role].push(w); });
-      ['operator','manager','lifeguard','gateperson'].forEach(function(r){
-        if(byRole[r] && byRole[r].length){
-          html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--ink-soft);margin:12px 0 6px;">'+ROLE_LABEL[r]+'s</div>';
-          byRole[r].forEach(function(w){
-            html += '<div class="roster-pick"><span class="rname">'+escapeHtml(w.name)+'</span><button data-pick="'+w.id+'">This is me</button></div>';
-          });
-        }
-      });
-      html += '<div class="divider-or">or</div>' +
-        '<div class="field"><label>Add yourself to the roster</label><input id="ob-newname" placeholder="Your name"/></div>' +
-        '<div class="field"><label>Your role</label>' +
-        '<select id="ob-newrole"><option value="lifeguard">Lifeguard</option><option value="manager">Manager</option><option value="gateperson">Gateperson</option></select></div>' +
-        '<button class="primary-btn" id="ob-addme" style="width:100%; padding:10px;">Add me &amp; continue</button>';
+      html += '<h2>Create account</h2>' +
+        '<p>Set up your login for the pool shift board.</p>' +
+        '<div class="field"><label>Full name</label><input id="reg-name" placeholder="e.g. Jamie Rivera"/></div>' +
+        '<div class="field"><label>Position</label><select id="reg-role">' +
+        '<option value="lifeguard">Lifeguard</option><option value="manager">Manager</option><option value="gateperson">Gateperson</option>' +
+        '</select></div>' +
+        '<div class="field"><label>Username</label><input id="reg-user" placeholder="Choose a username" autocomplete="username"/></div>' +
+        '<div class="field"><label>Password</label><input id="reg-pass" type="password" placeholder="Choose a password" autocomplete="new-password"/></div>' +
+        '<div id="auth-error" style="color:var(--buoy); font-size:12px; margin-bottom:10px; display:none;"></div>' +
+        '<button class="primary-btn" id="auth-submit" style="width:100%; padding:10px;">Create account</button>' +
+        '<div class="divider-or">or</div>' +
+        '<button class="link-btn" id="show-login" style="color:var(--deep); text-decoration:underline; font-size:13px; font-weight:600; width:100%; text-align:center; display:block;">Sign in instead</button>';
     }
     html += '</div></div>';
     return html;
   }
 
   function bindOnboard(){
-    var create = document.getElementById('ob-create');
-    if(create){
-      create.onclick = async function(){
-        var name = document.getElementById('ob-name').value.trim();
-        if(!name){ showToast('Enter your name first'); return; }
-        var w = await api('POST','/api/workers',{name:name, role:'operator'});
-        state.workers.push(w);
-        state.identity = {id:w.id, name:w.name, role:w.role};
-        localStorage.setItem('pool_identity', JSON.stringify(state.identity));
-        render();
+    var showReg = document.getElementById('show-register');
+    if(showReg) showReg.onclick = function(){ state.authMode = 'register'; render(); };
+    var showLogin = document.getElementById('show-login');
+    if(showLogin) showLogin.onclick = function(){ state.authMode = 'login'; render(); };
+
+    var submit = document.getElementById('auth-submit');
+    if(!submit) return;
+
+    if(state.authMode === 'register'){
+      submit.onclick = async function(){
+        var name = document.getElementById('reg-name').value.trim();
+        var role = document.getElementById('reg-role').value;
+        var username = document.getElementById('reg-user').value.trim();
+        var password = document.getElementById('reg-pass').value;
+        var errEl = document.getElementById('auth-error');
+        if(!name || !username || !password){ errEl.textContent = 'Fill in all fields'; errEl.style.display='block'; return; }
+        if(password.length < 4){ errEl.textContent = 'Password must be at least 4 characters'; errEl.style.display='block'; return; }
+        try {
+          var res = await fetch('/api/register', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:username, password:password, name:name, role:role})});
+          var data = await res.json();
+          if(!res.ok){ errEl.textContent = data.error; errEl.style.display='block'; return; }
+          state.identity = data;
+          localStorage.setItem('pool_identity', JSON.stringify(data));
+          await loadWorkersAndShifts();
+          render();
+        } catch(e){ errEl.textContent = 'Connection error'; errEl.style.display='block'; }
       };
-    }
-    document.querySelectorAll('[data-pick]').forEach(function(btn){
-      btn.onclick = function(){
-        var w = state.workers.find(function(w){ return w.id===btn.dataset.pick; });
-        state.identity = {id:w.id, name:w.name, role:w.role};
-        localStorage.setItem('pool_identity', JSON.stringify(state.identity));
-        render();
-      };
-    });
-    var addme = document.getElementById('ob-addme');
-    if(addme){
-      addme.onclick = async function(){
-        var name = document.getElementById('ob-newname').value.trim();
-        var role = document.getElementById('ob-newrole').value;
-        if(!name){ showToast('Enter your name first'); return; }
-        var w = await api('POST','/api/workers',{name:name, role:role});
-        state.workers.push(w);
-        state.identity = {id:w.id, name:w.name, role:w.role};
-        localStorage.setItem('pool_identity', JSON.stringify(state.identity));
-        render();
+    } else {
+      submit.onclick = async function(){
+        var username = document.getElementById('auth-user').value.trim();
+        var password = document.getElementById('auth-pass').value;
+        var errEl = document.getElementById('auth-error');
+        if(!username || !password){ errEl.textContent = 'Enter username and password'; errEl.style.display='block'; return; }
+        try {
+          var res = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:username, password:password})});
+          var data = await res.json();
+          if(!res.ok){ errEl.textContent = data.error; errEl.style.display='block'; return; }
+          state.identity = data;
+          localStorage.setItem('pool_identity', JSON.stringify(data));
+          await loadWorkersAndShifts();
+          render();
+        } catch(e){ errEl.textContent = 'Connection error'; errEl.style.display='block'; }
       };
     }
   }

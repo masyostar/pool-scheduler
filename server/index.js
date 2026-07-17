@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -13,9 +14,11 @@ app.use(express.json());
 
 function readData() {
   if (!fs.existsSync(DATA_FILE)) {
-    return { workers: [], shifts: [] };
+    return { users: [], workers: [], shifts: [] };
   }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  if (!data.users) data.users = [];
+  return data;
 }
 
 function writeData(data) {
@@ -25,6 +28,57 @@ function writeData(data) {
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return salt + ':' + hash;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(':');
+  const test = crypto.scryptSync(password, salt, 64).toString('hex');
+  return hash === test;
+}
+
+// ============ USERS (Auth) ============
+
+app.post('/api/register', (req, res) => {
+  const data = readData();
+  const { username, password, name, role } = req.body;
+  if (!username || !password || !name || !role) {
+    return res.status(400).json({ error: 'All fields required' });
+  }
+  if (data.users.find(u => u.username === username)) {
+    return res.status(400).json({ error: 'Username already taken' });
+  }
+  const user = {
+    id: uid(),
+    username,
+    password: hashPassword(password),
+    name,
+    role
+  };
+  data.users.push(user);
+  // Also create a worker entry
+  if (!data.workers) data.workers = [];
+  data.workers.push({ id: user.id, name, role });
+  writeData(data);
+  res.json({ id: user.id, username: user.username, name: user.name, role: user.role });
+});
+
+app.post('/api/login', (req, res) => {
+  const data = readData();
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  const user = data.users.find(u => u.username === username);
+  if (!user || !verifyPassword(password, user.password)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  res.json({ id: user.id, username: user.username, name: user.name, role: user.role });
+});
 
 // ============ WORKERS ============
 
@@ -217,7 +271,7 @@ function timeToMin(t) {
 // ============ RESET ============
 
 app.post('/api/reset', (req, res) => {
-  writeData({ workers: [], shifts: [], availability_requests: [], availability: [] });
+  writeData({ users: [], workers: [], shifts: [], availability_requests: [], availability: [] });
   res.json({ ok: true });
 });
 
