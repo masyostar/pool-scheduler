@@ -236,6 +236,7 @@
   .avail-opt.active-opt{background:var(--green); color:#fff; border-color:var(--green);}
   .avail-time-input{border:none; background:transparent; font-size:11px; font-weight:600; color:inherit; width:70px; padding:0; cursor:pointer;}
   .avail-opt.active-opt .avail-time-input{color:#fff;}
+  .worker-card:hover:not(.selected){border-color:var(--deep) !important; background:var(--sand) !important;}
 
   .onboard-wrap{
     max-width:420px; margin:60px auto; padding:0 20px;
@@ -798,26 +799,57 @@
 
     if(m.type === 'shift'){
       var editing = !!m.data.id;
+      var shiftDate = m.data.date || fmtISO(new Date());
+      var shiftStart = m.data.start || '09:00';
+      var shiftEnd = m.data.end || '17:00';
+      var shiftRole = m.data.role || 'Lifeguard';
+      var unselected = !m.data.workerId;
+      var unassignedCard = '<div class="worker-card'+(unselected?' selected':'')+'" data-select-worker="" style="border:1px solid '+(unselected?'var(--deep)':'var(--line)')+'; border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; background:'+(unselected?'var(--deep); color:#fff;':'#fff;')+'">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+        '<span style="font-weight:600; font-size:13px;">Unassigned (open)</span>' +
+        '</div></div>';
+      var workerCards = unassignedCard + state.workers.filter(function(w){ return w.role !== 'operator'; }).map(function(w){
+        var isSelected = m.data.workerId === w.id;
+        var av = workerAvailForDate(w.id, shiftDate);
+        var avLabel = '', avColor = '#999';
+        if(av){
+          if(av.available){
+            if(av.afterTime){ avLabel = 'Available after '+av.afterTime; avColor = 'var(--green)'; }
+            else if(av.beforeTime){ avLabel = 'Available before '+av.beforeTime; avColor = 'var(--green)'; }
+            else { avLabel = 'Available all day'; avColor = 'var(--green)'; }
+          } else { avLabel = 'Unavailable'; avColor = 'var(--buoy)'; }
+        } else { avLabel = 'No availability set'; avColor = '#ccc'; }
+        var conflicts = state.shifts.filter(function(s){
+          return s.workerId === w.id && s.date === shiftDate && s.id !== m.data.id;
+        });
+        var conflictLabel = '';
+        if(conflicts.length > 0){
+          var cTimes = conflicts.map(function(c){ return c.start+'-'+c.end; }).join(', ');
+          conflictLabel = '<span style="color:var(--buoy); font-size:10px; font-weight:600;">Conflicts: '+cTimes+'</span>';
+        }
+        var roleMatch = (w.role.toLowerCase() === shiftRole.toLowerCase());
+        var roleBadge = roleMatch ? '' : '<span style="font-size:10px; background:var(--sand); border:1px solid var(--line); border-radius:4px; padding:1px 5px; color:var(--ink-soft);">'+ROLE_LABEL[w.role]+'</span>';
+        return '<div class="worker-card'+(isSelected?' selected':'')+'" data-select-worker="'+w.id+'" style="border:1px solid '+(isSelected?'var(--deep)':'var(--line)')+'; border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; background:'+(isSelected?'var(--deep); color:#fff;':'#fff;')+'">' +
+          '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+          '<span style="font-weight:600; font-size:13px;">'+escapeHtml(w.name)+' '+roleBadge+'</span>' +
+          '<span style="font-size:10px; font-weight:600; color:'+avColor+';">'+avLabel+'</span>' +
+          '</div>' + (conflictLabel ? '<div style="margin-top:3px;">'+conflictLabel+'</div>' : '') +
+          '</div>';
+      }).join('');
       wrap.innerHTML = '<div class="modal">' +
         '<h3>'+(editing? 'Edit shift' : 'Add shift')+'</h3>' +
-        '<div class="field"><label>Date</label><input type="date" id="f-date" value="'+(m.data.date || '')+'"></div>' +
-        '<div class="field row2"><div><label>Start</label><input type="time" id="f-start" value="'+(m.data.start || '09:00')+'"></div>' +
-        '<div><label>End</label><input type="time" id="f-end" value="'+(m.data.end || '17:00')+'"></div></div>' +
+        '<div class="field"><label>Date</label><input type="date" id="f-date" value="'+shiftDate+'"></div>' +
+        '<div class="field row2"><div><label>Start</label><input type="time" id="f-start" value="'+shiftStart+'"></div>' +
+        '<div><label>End</label><input type="time" id="f-end" value="'+shiftEnd+'"></div></div>' +
         '<div class="field"><label>Position</label><select id="f-role">' +
-        '<option value="Lifeguard" '+(m.data.role==='Lifeguard'?'selected':'')+'>Lifeguard</option>' +
-        '<option value="Manager" '+(m.data.role==='Manager'?'selected':'')+'>Manager</option>' +
-        '<option value="Gateperson" '+(m.data.role==='Gateperson'?'selected':'')+'>Gateperson</option>' +
+        '<option value="Lifeguard" '+(shiftRole==='Lifeguard'?'selected':'')+'>Lifeguard</option>' +
+        '<option value="Manager" '+(shiftRole==='Manager'?'selected':'')+'>Manager</option>' +
+        '<option value="Gateperson" '+(shiftRole==='Gateperson'?'selected':'')+'>Gateperson</option>' +
         '</select></div>' +
-        '<div class="field"><label>Assign to</label><select id="f-worker">' +
-        '<option value="">Unassigned (open)</option>';
-      state.workers.forEach(function(w){
-        wrap.innerHTML += '';
-      });
-      var workerOpts = state.workers.map(function(w){
-        return '<option value="'+w.id+'" '+(m.data.workerId===w.id?'selected':'')+'>'+escapeHtml(w.name)+' ('+ROLE_LABEL[w.role]+')</option>';
-      }).join('');
-      wrap.innerHTML += workerOpts +
-        '</select></div>' +
+        '<div class="field"><label>Assign to</label>' +
+        '<div id="f-worker-list">' + workerCards + '</div>' +
+        '<input type="hidden" id="f-worker" value="'+(m.data.workerId||'')+'"/>' +
+        '</div>' +
         '<div class="field"><label>Note (optional)</label><input id="f-note" value="'+escapeAttr(m.data.note||'')+'" placeholder="e.g. deep end coverage"></div>' +
         '<div class="modal-actions"><div>'+(editing? '<button class="del-link" id="f-delete">Delete shift</button>':'')+'</div>' +
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
@@ -851,6 +883,36 @@
     wrap.addEventListener('click', function(e){ if(e.target.id==='modal-bg'){ state.modal=null; render(); } });
     var cancel = document.getElementById('f-cancel');
     if(cancel) cancel.onclick = function(){ state.modal=null; render(); };
+
+    if(m.type === 'shift'){
+      document.querySelectorAll('[data-select-worker]').forEach(function(el){
+        el.onclick = function(e){
+          e.stopPropagation();
+          var wid = el.dataset.selectWorker || '';
+          state.modal.data.workerId = wid;
+          render();
+        };
+      });
+      function refreshWorkerCards(){
+        var date = document.getElementById('f-date').value;
+        var start = document.getElementById('f-start').value;
+        var end = document.getElementById('f-end').value;
+        var role = document.getElementById('f-role').value;
+        if(date) state.modal.data.date = date;
+        if(start) state.modal.data.start = start;
+        if(end) state.modal.data.end = end;
+        if(role) state.modal.data.role = role;
+        render();
+      }
+      var fDate = document.getElementById('f-date');
+      var fStart = document.getElementById('f-start');
+      var fEnd = document.getElementById('f-end');
+      var fRole = document.getElementById('f-role');
+      if(fDate) fDate.onchange = refreshWorkerCards;
+      if(fStart) fStart.onchange = refreshWorkerCards;
+      if(fEnd) fEnd.onchange = refreshWorkerCards;
+      if(fRole) fRole.onchange = refreshWorkerCards;
+    }
 
     var save = document.getElementById('f-save');
     if(save){
