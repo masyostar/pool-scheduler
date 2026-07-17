@@ -18,6 +18,9 @@ function readData() {
   }
   const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   if (!data.users) data.users = [];
+  if (data.users.length === 0) {
+    return { users: [], workers: [], shifts: [] };
+  }
   return data;
 }
 
