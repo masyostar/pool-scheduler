@@ -924,6 +924,33 @@
         var workerId = document.getElementById('f-worker').value || null;
         var note = document.getElementById('f-note').value.trim();
         if(!date || !start || !end){ showToast('Fill in date, start and end'); return; }
+        if(workerId){
+          var av = workerAvailForDate(workerId, date);
+          var blocked = false;
+          var reason = '';
+          if(!av || !av.available){
+            blocked = true;
+            reason = 'has not marked themselves available for '+date;
+          } else if(av.afterTime && start < av.afterTime){
+            blocked = true;
+            reason = 'is only available after '+av.afterTime+' (shift starts at '+start+')';
+          } else if(av.beforeTime && end > av.beforeTime){
+            blocked = true;
+            reason = 'is only available before '+av.beforeTime+' (shift ends at '+end+')';
+          }
+          if(blocked){
+            var w = state.workers.find(function(w){ return w.id===workerId; });
+            if(!confirm(escapeHtml(w ? w.name : 'This worker')+' '+reason+'.\n\nAssign anyway?')) return;
+          }
+          var conflictShifts = state.shifts.filter(function(s){
+            return s.workerId === workerId && s.date === date && s.id !== m.data.id && s.status !== 'trade';
+          });
+          if(conflictShifts.length > 0){
+            var w = state.workers.find(function(w){ return w.id===workerId; });
+            var cTimes = conflictShifts.map(function(c){ return c.start+'-'+c.end; }).join(', ');
+            if(!confirm(escapeHtml(w ? w.name : 'This worker')+' already has a shift on '+date+' ('+cTimes+').\n\nAssign anyway?')) return;
+          }
+        }
         if(m.data.id){
           await api('PUT','/api/shifts/'+m.data.id, {date:date, start:start, end:end, role:role, workerId:workerId, note:note, status: workerId ? 'assigned' : 'open'});
           var s = state.shifts.find(function(s){ return s.id===m.data.id; });
