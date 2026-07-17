@@ -250,6 +250,23 @@
     font-size:13px; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,0.2); z-index:60;
   }
 
+  .notif-badge{
+    position:absolute; top:-4px; right:-4px;
+    background:var(--buoy); color:#fff; font-size:9px; font-weight:700;
+    width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--deep); line-height:1;
+  }
+  .tab-badge{
+    display:inline-flex; align-items:center; justify-content:center;
+    background:var(--buoy); color:#fff; font-size:10px; font-weight:700;
+    min-width:16px; height:16px; border-radius:8px; padding:0 4px; margin-left:4px; vertical-align:middle;
+  }
+  .notif-bell{
+    position:relative; background:none; border:none; color:var(--water-light); font-size:18px;
+    padding:4px; cursor:pointer; line-height:1;
+  }
+  .notif-bell.has-new{ color:var(--amber); }
+
   @media (max-width:820px){
     .weekgrid{grid-template-columns:1fr;}
     .daycol{min-width:0;}
@@ -276,7 +293,8 @@
     weekStart: startOfWeek(new Date()),
     modal: null,
     loading: true,
-    toast: null
+    toast: null,
+    lastSeenAvail: 0
   };
 
   function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -325,6 +343,7 @@
 
   async function loadAll(){
     const identity = JSON.parse(localStorage.getItem('pool_identity') || 'null');
+    const lastSeen = parseInt(localStorage.getItem('pool_lastSeenAvail') || '0');
     const [workers, shifts, availRequests, availability] = await Promise.all([
       api('GET','/api/workers'),
       api('GET','/api/shifts'),
@@ -336,12 +355,21 @@
     state.shifts = shifts || [];
     state.availabilityRequests = availRequests || [];
     state.availability = availability || [];
+    state.lastSeenAvail = lastSeen;
     state.loading = false;
     render();
   }
 
   function isOperator(){ return state.identity && state.identity.role === 'operator'; }
   function workerName(id){ const w = state.workers.find(w=>w.id===id); return w? w.name : null; }
+  function hasNewAvailRequest(){
+    if(isOperator()) return false;
+    return state.availabilityRequests.some(function(r){ return new Date(r.createdAt).getTime() > state.lastSeenAvail; });
+  }
+  function markAvailSeen(){
+    state.lastSeenAvail = Date.now();
+    localStorage.setItem('pool_lastSeenAvail', String(state.lastSeenAvail));
+  }
 
   function escapeHtml(str){
     return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -434,15 +462,18 @@
     var html = '<div class="topbar">' +
       '<div class="brand"><div class="ring"></div>' +
       '<div class="brand-text"><div class="t1">Pool Scheduler</div><div class="t2">Staff Shift Board</div></div></div>' +
-      '<div class="whoami">' +
-      '<span class="badge '+state.identity.role+'">'+ROLE_LABEL[state.identity.role]+'</span>' +
+      '<div class="whoami">';
+    if(!isOperator() && hasNewAvailRequest()){
+      html += '<button class="notif-bell has-new" id="notif-bell" title="New availability request!">&#128276;<span class="notif-badge">!</span></button>';
+    }
+    html += '<span class="badge '+state.identity.role+'">'+ROLE_LABEL[state.identity.role]+'</span>' +
       '<span>'+escapeHtml(state.identity.name)+'</span>' +
       '<button class="link-btn" id="switch-user">Switch user</button></div></div>';
 
     html += '<div class="tabs">' +
       '<button class="tab '+(state.tab==='schedule'?'active':'')+'" data-tab="schedule">Schedule</button>' +
       '<button class="tab '+(state.tab==='board'?'active':'')+'" data-tab="board">Open &amp; Trade</button>' +
-      '<button class="tab '+(state.tab==='availability'?'active':'')+'" data-tab="availability">Availability</button>';
+      '<button class="tab '+(state.tab==='availability'?'active':'')+'" data-tab="availability">Availability'+((!isOperator() && hasNewAvailRequest()) ? '<span class="tab-badge">!</span>' : '')+'</button>';
     if(isOperator()) html += '<button class="tab '+(state.tab==='roster'?'active':'')+'" data-tab="roster">Roster</button>';
     html += '</div><div class="content">';
 
@@ -640,7 +671,8 @@
       } else {
         var latestReq = state.availabilityRequests[state.availabilityRequests.length - 1];
         var dates = datesInRange(latestReq.fromDate, latestReq.toDate);
-        html += '<p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Mark each day as available or unavailable for '+fmtRange(new Date(latestReq.fromDate+'T00:00:00'))+'</p>';
+        var isNew = new Date(latestReq.createdAt).getTime() > state.lastSeenAvail;
+        html += '<p style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Mark each day as available or unavailable for '+fmtRange(new Date(latestReq.fromDate+'T00:00:00'))+(isNew ? ' <span style="background:var(--buoy); color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; text-transform:uppercase;">New</span>' : '')+'</p>';
         dates.forEach(function(d){
           var dt = new Date(d+'T00:00:00');
           var av = myAvailForDate(d);
@@ -813,8 +845,15 @@
     if(switchUser) switchUser.onclick = function(){ state.identity=null; localStorage.removeItem('pool_identity'); render(); };
 
     document.querySelectorAll('[data-tab]').forEach(function(el){
-      el.onclick = function(){ state.tab = el.dataset.tab; render(); };
+      el.onclick = function(){
+        state.tab = el.dataset.tab;
+        if(state.tab === 'availability' && !isOperator()) markAvailSeen();
+        render();
+      };
     });
+
+    var notifBell = document.getElementById('notif-bell');
+    if(notifBell) notifBell.onclick = function(){ state.tab = 'availability'; markAvailSeen(); render(); };
 
     var prev = document.getElementById('wk-prev');
     if(prev) prev.onclick = function(){ var d=new Date(state.weekStart); d.setDate(d.getDate()-7); state.weekStart=d; render(); };
