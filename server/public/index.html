@@ -394,12 +394,18 @@
     }
   }
 
-  // ================= AUTH (Login/Register) =================
+  // ================= AUTH (Login/Register/Setup) =================
   function onboardHTML(){
-    var mode = state.authMode || 'login';
+    var mode = state.authMode || (hasRoster ? 'login' : 'setup');
     var hasRoster = state.workers && state.workers.length > 0;
     var html = '<div class="onboard-wrap"><div class="onboard-card">';
-    if(mode === 'login'){
+    if(mode === 'setup'){
+      html += '<h2>Set up your pool\'s shift board</h2>' +
+        '<p>Nobody\'s set this up yet. Enter your name to create the pool staff roster \u2014 you\'ll be the Operator, in charge of building and editing the schedule.</p>' +
+        '<div class="field"><label>Your name</label><input id="setup-name" placeholder="e.g. Jamie Rivera"/></div>' +
+        '<div id="auth-error" style="color:var(--buoy); font-size:12px; margin-bottom:10px; display:none;"></div>' +
+        '<button class="primary-btn" id="auth-submit" style="width:100%; padding:10px;">Create schedule &amp; become Operator</button>';
+    } else if(mode === 'login'){
       html += '<h2>Welcome back</h2>' +
         '<p>Sign in to view your schedule and shifts.</p>' +
         '<div class="field"><label>Username</label><input id="auth-user" placeholder="Username" autocomplete="username"/></div>' +
@@ -437,7 +443,24 @@
     var submit = document.getElementById('auth-submit');
     if(!submit) return;
 
-    if(state.authMode === 'register'){
+    if(state.authMode === 'setup'){
+      submit.onclick = async function(){
+        var name = document.getElementById('setup-name').value.trim();
+        var errEl = document.getElementById('auth-error');
+        if(!name){ errEl.textContent = 'Enter your name'; errEl.style.display='block'; return; }
+        var username = name.toLowerCase().replace(/[^a-z0-9]/g,'');
+        var password = username + '1234';
+        try {
+          var res = await fetch('/api/register', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:username, password:password, name:name})});
+          var data = await res.json();
+          if(!res.ok){ errEl.textContent = data.error; errEl.style.display='block'; return; }
+          state.identity = data;
+          localStorage.setItem('pool_identity', JSON.stringify(data));
+          await loadWorkersAndShifts();
+          render();
+        } catch(e){ errEl.textContent = 'Connection error'; errEl.style.display='block'; }
+      };
+    } else if(state.authMode === 'register'){
       submit.onclick = async function(){
         var name = document.getElementById('reg-name').value.trim();
         var role = document.getElementById('reg-role').value;
@@ -977,6 +1000,7 @@
       state.workers = [];
       state.shifts = [];
       state.identity = null;
+      state.authMode = 'setup';
       localStorage.removeItem('pool_identity');
       showToast('All data cleared');
       render();
