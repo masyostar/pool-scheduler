@@ -228,7 +228,7 @@
   }
   .field.row2{display:flex; gap:10px;}
   .field.row2 > div{flex:1;}
-  .modal-actions{display:flex; justify-content:space-between; align-items:center; margin-top:16px;}
+  .modal-actions{display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:8px;}
   .modal-actions .right{display:flex; gap:8px;}
   .cancel-btn{background:none; border:none; color:var(--ink-soft); font-size:13px; font-weight:600;}
   .del-link{background:none; border:none; color:#b33; font-size:12px; text-decoration:underline;}
@@ -238,6 +238,18 @@
   .avail-opt.active-opt .avail-time-input{color:#fff;}
   .avail-opt.active-opt-unavail{background:var(--buoy); color:#fff; border-color:var(--buoy);}
   .worker-card:hover:not(.selected){border-color:var(--deep) !important; background:var(--sand) !important;}
+  #f-worker-list{max-height:260px; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-right:4px;}
+  .worker-card .wk-info{display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;}
+
+  @media (max-width:480px){
+    .modal{padding:16px; max-height:85vh;}
+    .modal h3{font-size:16px;}
+    .field.row2{flex-direction:column; gap:0;}
+    .modal-actions{flex-direction:column-reverse; align-items:stretch;}
+    .modal-actions .right{justify-content:flex-end;}
+    .modal-actions .del-link{text-align:center;}
+    #f-worker-list{max-height:200px;}
+  }
 
   .onboard-wrap{
     max-width:420px; margin:60px auto; padding:0 20px;
@@ -642,8 +654,13 @@
       actions += '<button class="edit" data-edit="'+s.id+'">Edit</button>';
     }
     if(mine && s.status==='assigned'){
-      actions += '<button class="trade-btn" data-trade="'+s.id+'">Put up for trade</button>';
-      actions += '<button class="drop" data-drop="'+s.id+'">Drop shift</button>';
+      var pendingDrop = state.shiftRequests.find(function(r){ return r.shiftId===s.id && r.status==='pending' && r.type==='drop'; });
+      if(pendingDrop){
+        actions += '<button class="drop" disabled style="opacity:0.6; cursor:default;">Drop requested</button>';
+      } else {
+        actions += '<button class="trade-btn" data-trade="'+s.id+'">Put up for trade</button>';
+        actions += '<button class="drop" data-drop="'+s.id+'">Request to drop</button>';
+      }
     }
     if(mine && s.status==='trade'){
       actions += '<button class="edit" data-untrade="'+s.id+'">Cancel trade</button>';
@@ -673,15 +690,20 @@
         '<h3 style="margin:0; color:var(--deep);">Pending shift requests</h3>' +
         '<span style="background:var(--buoy); color:#fff; font-size:10px; font-weight:700; padding:2px 7px; border-radius:8px;">'+pendingReqs.length+'</span></div>';
       pendingReqs.forEach(function(req){
-        html += '<div class="board-item" style="border-left:3px solid var(--buoy);">' +
+        var isDrop = req.type === 'drop';
+        var label = isDrop ? escapeHtml(req.workerName)+' wants to drop a shift' : escapeHtml(req.workerName)+' wants to claim a shift';
+        var btnLabel = isDrop ? 'Approve drop' : 'Approve';
+        var shift = state.shifts.find(function(s){ return s.id===req.shiftId; });
+        var shiftInfo = shift ? new Date(shift.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' '+shift.start+'-'+shift.end : req.shiftDate+' '+req.shiftTime;
+        html += '<div class="board-item" style="border-left:3px solid '+(isDrop?'var(--orange,var(--buoy))':'var(--buoy)')+';">' +
           '<div class="left">' +
-          '<div class="d1">'+escapeHtml(req.workerName)+' wants to claim a shift</div>' +
-          '<div class="d2">'+new Date(req.shiftDate+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' \u00b7 '+escapeHtml(req.shiftTime)+'</div>' +
+          '<div class="d1">'+label+'</div>' +
+          '<div class="d2">'+shiftInfo+'</div>' +
           (req.comment ? '<div class="d3" style="font-style:italic;">"'+escapeHtml(req.comment)+'"</div>' : '') +
           '<div class="d3" style="color:#999;">Requested '+new Date(req.createdAt).toLocaleDateString()+'</div>' +
           '</div>' +
           '<div style="display:flex; gap:6px;">' +
-          '<button class="primary-btn" data-approve-req="'+req.id+'" style="background:var(--green); font-size:12px;">Approve</button>' +
+          '<button class="primary-btn" data-approve-req="'+req.id+'" style="background:var(--green); font-size:12px;">'+btnLabel+'</button>' +
           '<button class="del-link" data-deny-req="'+req.id+'">Deny</button>' +
           '</div></div>';
       });
@@ -910,11 +932,11 @@
         var roleMatch = (w.role.toLowerCase() === shiftRole.toLowerCase());
         var roleBadge = roleMatch ? '' : '<span style="font-size:10px; background:var(--sand); border:1px solid var(--line); border-radius:4px; padding:1px 5px; color:var(--ink-soft);">'+ROLE_LABEL[w.role]+'</span>';
         return '<div class="worker-card'+(isSelected?' selected':'')+'" data-select-worker="'+w.id+'" style="border:1px solid '+(isSelected?'var(--deep)':'var(--line)')+'; border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; background:'+(isSelected?'var(--deep); color:#fff;':'#fff;')+'">' +
-          '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+          '<div class="wk-info">' +
           '<span style="font-weight:600; font-size:13px;">'+escapeHtml(w.name)+' '+roleBadge+'</span>' +
           '<span style="font-size:10px; font-weight:600; color:var(--ink-soft);">Week: '+hoursLabel+'</span>' +
           '</div>' +
-          '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:3px;">' +
+          '<div class="wk-info" style="margin-top:3px;">' +
           '<span style="font-size:10px; font-weight:600; color:'+avColor+';">'+avLabel+'</span>' +
           '</div>' + (conflictLabel ? '<div style="margin-top:3px;">'+conflictLabel+'</div>' : '') +
           '</div>';
@@ -971,6 +993,19 @@
         '<div class="modal-actions"><div></div>' +
         '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
         '<button class="primary-btn" id="cr-send" style="background:var(--buoy);">Send request to operator</button></div></div></div>';
+    } else if(m.type === 'droprequest'){
+      var s = m.data.shift;
+      var shiftLabel = new Date(s.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' '+s.start+'-'+s.end;
+      wrap.innerHTML = '<div class="modal">' +
+        '<h3>Request to drop shift</h3>' +
+        '<p style="font-size:13px; color:var(--ink); margin:0 0 14px;">Your request to drop this shift will be sent to the operator for approval.</p>' +
+        '<div style="background:var(--sand); border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:14px;">' +
+        '<div style="font-weight:600; font-size:13px;">'+shiftLabel+'</div>' +
+        '<div style="font-size:11px; color:var(--ink-soft);">'+escapeHtml(s.role)+'</div></div>' +
+        '<div class="field"><label>Reason (optional)</label><textarea id="dr-comment" rows="3" placeholder="e.g. I have a conflict that day" style="width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; font-family:Inter,sans-serif; font-size:13px; resize:vertical;"></textarea></div>' +
+        '<div class="modal-actions"><div></div>' +
+        '<div class="right"><button class="cancel-btn" id="f-cancel">Cancel</button>' +
+        '<button class="primary-btn" id="dr-send">Send request</button></div></div></div>';
     }
 
     app.appendChild(wrap);
@@ -1108,6 +1143,21 @@
         showToast('Request sent to operator'); render();
       };
     }
+    var drSend = document.getElementById('dr-send');
+    if(drSend){
+      drSend.onclick = async function(){
+        var comment = document.getElementById('dr-comment').value.trim();
+        var s = m.data.shift;
+        var shiftLabel = new Date(s.date+'T00:00:00').toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'})+' '+s.start+'-'+s.end;
+        var msg = 'Send a request to the operator to drop this shift?\n\nShift: '+shiftLabel;
+        if(comment) msg += '\nReason: '+comment;
+        if(!await showConfirm(msg, 'Confirm drop request')) return;
+        var req = await api('POST','/api/shift-requests',{shiftId:s.id, workerId:state.identity.id, workerName:state.identity.name, shiftDate:s.date, shiftTime:s.start+'-'+s.end, type:'drop', comment:comment});
+        state.shiftRequests.push(req);
+        state.modal = null;
+        showToast('Drop request sent to operator'); render();
+      };
+    }
   }
 
   // ================= EVENT BINDING =================
@@ -1158,10 +1208,13 @@
     });
     document.querySelectorAll('[data-drop]').forEach(function(el){
       el.onclick = async function(){
-        if(!await showConfirm('The shift will become unfilled and open for anyone to claim.', 'Drop shift?')) return;
-        await api('PUT','/api/shifts/'+el.dataset.drop, {status:'open', workerId:null});
-        var s=state.shifts.find(function(s){ return s.id===el.dataset.drop; }); s.status='open'; s.workerId=null;
-        showToast('Shift dropped'); render();
+        var shiftId = el.dataset.drop;
+        var s = state.shifts.find(function(s){ return s.id===shiftId; });
+        if(!s) return;
+        var existingReq = state.shiftRequests.find(function(r){ return r.shiftId===shiftId && r.status==='pending'; });
+        if(existingReq){ showToast('Drop request already pending'); return; }
+        state.modal = {type:'droprequest', data:{shiftId:shiftId, shift:s}};
+        render();
       };
     });
     document.querySelectorAll('[data-approve-req]').forEach(function(el){
@@ -1169,12 +1222,21 @@
         var reqId = el.dataset.approveReq;
         var req = state.shiftRequests.find(function(r){ return r.id===reqId; });
         if(!req) return;
-        await api('PUT','/api/shifts/'+req.shiftId, {status:'assigned', workerId:req.workerId});
-        var s = state.shifts.find(function(s){ return s.id===req.shiftId; });
-        if(s){ s.status='assigned'; s.workerId=req.workerId; }
-        await api('PUT','/api/shift-requests/'+reqId, {status:'approved'});
-        req.status='approved';
-        showToast('Shift assigned to '+req.workerName); render();
+        if(req.type === 'drop'){
+          await api('PUT','/api/shifts/'+req.shiftId, {status:'open', workerId:null});
+          var s = state.shifts.find(function(s){ return s.id===req.shiftId; });
+          if(s){ s.status='open'; s.workerId=null; }
+          await api('PUT','/api/shift-requests/'+reqId, {status:'approved'});
+          req.status='approved';
+          showToast('Drop approved for '+req.workerName); render();
+        } else {
+          await api('PUT','/api/shifts/'+req.shiftId, {status:'assigned', workerId:req.workerId});
+          var s = state.shifts.find(function(s){ return s.id===req.shiftId; });
+          if(s){ s.status='assigned'; s.workerId=req.workerId; }
+          await api('PUT','/api/shift-requests/'+reqId, {status:'approved'});
+          req.status='approved';
+          showToast('Shift assigned to '+req.workerName); render();
+        }
       };
     });
     document.querySelectorAll('[data-deny-req]').forEach(function(el){
