@@ -847,7 +847,7 @@
           state.workers.forEach(function(w){
             if(w.role === 'operator') return;
             html += '<tr><td style="padding:6px 8px; border-bottom:1px solid var(--line); font-weight:600;">'+escapeHtml(w.name)+'</td>';
-        allDates.forEach(function(d){
+        dates.forEach(function(d){
               var av = workerAvailForDate(w.id, d);
               if(av){
                 if(av.available){
