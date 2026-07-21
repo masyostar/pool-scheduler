@@ -1647,7 +1647,12 @@
     document.querySelectorAll('[data-role-for]').forEach(function(el){
       el.onchange = async function(){
         var w = state.workers.find(function(w){ return w.id===el.dataset.roleFor; });
-        await api('PUT','/api/workers/'+w.id, {role:el.value});
+        var user = state.users.find(function(u){ return u.id===el.dataset.roleFor; });
+        if(user){
+          await api('PUT','/api/users/'+w.id+'/role', {role:el.value});
+        } else {
+          await api('PUT','/api/workers/'+w.id, {role:el.value});
+        }
         w.role = el.value;
         if(state.identity && state.identity.id===w.id) { state.identity.role = w.role; await setPersonal('pool_identity', state.identity); }
         showToast('Role updated'); render();
