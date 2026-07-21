@@ -7,3 +7,19 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Uncomment together with `plan:` and `disk:` below when you upgrade
+      # off the free plan — see note there for why.
+      # - key: DATA_FILE
+      #   value: /var/data/data.json
+    # ---- Persistent disk (staged for later) ----
+    # Render's free plan cannot attach a disk — this block is inert (commented
+    # out) so it has no effect while on free. When you upgrade to a paid plan
+    # (Starter or above): uncomment `plan:` and `disk:` below AND the
+    # DATA_FILE env var above, then redeploy. server/index.js already reads
+    # DATA_FILE from the environment, falling back to a local file when it's
+    # unset, so no code changes are needed at upgrade time.
+    # plan: starter
+    # disk:
+    #   name: pool-scheduler-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
